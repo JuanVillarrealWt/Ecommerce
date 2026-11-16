@@ -1,0 +1,39 @@
+using ECommerce.Application.Products;
+using ECommerce.Domain.Orders;
+
+namespace ECommerce.Application.Orders;
+
+public record CreateOrderItemRequest(int ProductId, int Quantity);
+
+public sealed class CreateOrder(IOrderService orderService, IProductCatalog productCatalog)
+{
+    public async Task<Order> ExecuteAsync(
+        int partnerId,
+        string clientOrderRef,
+        IReadOnlyList<CreateOrderItemRequest> items,
+        CancellationToken cancellationToken = default)
+    {
+        if (partnerId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(partnerId), "El identificador del cliente debe ser mayor a cero.");
+
+        if (items is null || items.Count == 0)
+            throw new ArgumentException("El pedido debe contener al menos un producto.", nameof(items));
+
+        var validatedLines = new List<(int ProductId, int Quantity, decimal UnitPrice)>();
+
+        foreach (var item in items)
+        {
+            if (item.Quantity <= 0)
+                throw new ArgumentOutOfRangeException(nameof(items), $"La cantidad del producto ID {item.ProductId} debe ser mayor a cero.");
+
+            var product = await productCatalog.GetProductAsync(item.ProductId, cancellationToken);
+            if (product is null)
+                throw new InvalidOperationException($"El producto con ID {item.ProductId} no existe o no está disponible para venta.");
+
+            // Validar con el precio real vigente en Odoo (RN-02 / RN-06)
+            validatedLines.Add((product.Id, item.Quantity, (decimal)product.Price));
+        }
+
+        return await orderService.CreateOrderAsync(partnerId, clientOrderRef, validatedLines, cancellationToken);
+    }
+}

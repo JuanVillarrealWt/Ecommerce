@@ -1,0 +1,21 @@
+# .NET
+**/bin/
+**/obj/
+.dotnet-cli/
+*.user
+*.suo
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/.packages
+
+# Local secrets
+.env
+appsettings.Local.json
+**/secrets.json
+
+# IDE
+.idea/
+.vscode/
