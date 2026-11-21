@@ -49,3 +49,4 @@ public sealed class OdooCategoryCatalog(HttpClient http, IOptions<OdooOptions> o
         return categories;
     }
 }
+

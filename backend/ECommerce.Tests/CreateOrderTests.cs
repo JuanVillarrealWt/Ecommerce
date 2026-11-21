@@ -65,7 +65,7 @@ public class CreateOrderTests
         // Arrange (PA-03: Validar cantidad inválida <= 0)
         var fakeCatalog = new FakeProductCatalog(new()
         {
-            [7] = new Product(7, "Laptop Test", "Desc", 100m, null, new[] { 1 })
+            [7] = new Product(7, "Laptop Test", "Desc", 100m, null, new[] { 1 }, 50)
         });
         var fakeOrderService = new FakeOrderService();
         var useCase = new CreateOrder(fakeOrderService, fakeCatalog);
@@ -74,6 +74,25 @@ public class CreateOrderTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             useCase.ExecuteAsync(6, "REF-002", new[] { new CreateOrderItemRequest(7, invalidQty) }));
 
+        Assert.False(fakeOrderService.CreateOrderCalled);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithQuantityExceedingStock_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var fakeCatalog = new FakeProductCatalog(new()
+        {
+            [7] = new Product(7, "Laptop Test", "Desc", 100m, null, new[] { 1 }, 10)
+        });
+        var fakeOrderService = new FakeOrderService();
+        var useCase = new CreateOrder(fakeOrderService, fakeCatalog);
+
+        // Act & Assert (Solicitar 15 cuando hay 10 en stock)
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            useCase.ExecuteAsync(6, "REF-EXCEED", new[] { new CreateOrderItemRequest(7, 15) }));
+
+        Assert.Contains("Stock insuficiente", ex.Message);
         Assert.False(fakeOrderService.CreateOrderCalled);
     }
 
@@ -99,8 +118,8 @@ public class CreateOrderTests
         // Arrange: Pedido válido
         var fakeCatalog = new FakeProductCatalog(new()
         {
-            [7] = new Product(7, "PROD-TEST-001", "Desc 1", 10.0m, null, new[] { 1 }),
-            [8] = new Product(8, "PROD-TEST-002", "Desc 2", 15.0m, null, new[] { 1 })
+            [7] = new Product(7, "PROD-TEST-001", "Desc 1", 10.0m, null, new[] { 1 }, 50),
+            [8] = new Product(8, "PROD-TEST-002", "Desc 2", 15.0m, null, new[] { 1 }, 50)
         });
         var fakeOrderService = new FakeOrderService();
         var useCase = new CreateOrder(fakeOrderService, fakeCatalog);
@@ -120,3 +139,4 @@ public class CreateOrderTests
         Assert.Equal(40.0m, result.AmountTotal); // 1*10 + 2*15 = 40
     }
 }
+

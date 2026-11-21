@@ -4,8 +4,8 @@ import 'auth_repository.dart';
 class RegisterCustomerUseCase {
   const RegisterCustomerUseCase(this._repository);
   final AuthRepository _repository;
-  Future<Customer> call(String name, String email, String password) =>
-      _repository.register(name, email, password);
+  Future<Customer> call(String name, String email, String password, String province, String phone) =>
+      _repository.register(name, email, password, province, phone);
 }
 
 class LoginCustomerUseCase {
@@ -27,3 +27,4 @@ class GetCurrentCustomerUseCase {
   Customer? call() => _repository.getCurrentCustomer();
   bool get isAuthenticated => _repository.isAuthenticated;
 }
+

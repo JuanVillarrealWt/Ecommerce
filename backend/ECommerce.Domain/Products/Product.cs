@@ -6,4 +6,6 @@ public sealed record Product(
     string? Description,
     decimal Price,
     string? ImageUrl,
-    IReadOnlyList<int> CategoryIds);
+    IReadOnlyList<int> CategoryIds,
+    int Stock,
+    bool StockTracked = true);

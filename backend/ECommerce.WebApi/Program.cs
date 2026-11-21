@@ -3,6 +3,7 @@ using ECommerce.Application.Customers;
 using ECommerce.Application.Orders;
 using ECommerce.Application.Products;
 using ECommerce.Infrastructure.Auth;
+using ECommerce.Infrastructure.Carts;
 using ECommerce.Infrastructure.Odoo;
 using ECommerce.WebApi.Auth;
 using Microsoft.AspNetCore.Authentication;
@@ -17,6 +18,7 @@ builder.Services.AddHttpClient<IProductCatalog, OdooProductCatalog>((sp, client)
 builder.Services.AddHttpClient<ICategoryCatalog, OdooCategoryCatalog>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
 builder.Services.AddHttpClient<IOrderService, OdooOrderService>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
 builder.Services.AddHttpClient<ICustomerService, CustomerService>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
+builder.Services.AddSingleton<IAccountCartStore, JsonAccountCartStore>();
 
 // Casos de uso de la aplicación
 builder.Services.AddScoped<GetProducts>();
@@ -34,6 +36,8 @@ builder.Services.AddAuthentication(SimpleTokenAuthenticationHandler.SchemeName)
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -44,19 +48,24 @@ app.UseExceptionHandler(exceptionApp =>
 {
     exceptionApp.Run(async context =>
     {
+        var exFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var err = exFeature?.Error;
+        app.Logger.LogError(err, "Excepción no controlada: {Message}", err?.Message);
+
         context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = StatusCodes.Status500InternalServerError;
         var problem = new Microsoft.AspNetCore.Mvc.ProblemDetails
         {
             Status = StatusCodes.Status500InternalServerError,
             Title = "Error interno del servidor",
-            Detail = "Ocurrió un error inesperado al procesar la solicitud con el ERP u origen de datos."
+            Detail = err?.Message ?? "Ocurrió un error inesperado al procesar la solicitud con el ERP u origen de datos."
         };
         await context.Response.WriteAsJsonAsync(problem);
     });
 });
 
 app.UseAuthentication();
+app.UseCors();
 app.UseAuthorization();
 
 // Página visual de documentación interactiva de la API (/doc o /swagger)

@@ -43,3 +43,4 @@ flutter test
   * Consulta de productos con Fake Repository sin red.
   * Filtrado de productos por categoría.
   * Manejo controlado de excepciones de red.
+

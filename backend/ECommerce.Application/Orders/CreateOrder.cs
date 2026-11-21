@@ -26,9 +26,15 @@ public sealed class CreateOrder(IOrderService orderService, IProductCatalog prod
             if (item.Quantity <= 0)
                 throw new ArgumentOutOfRangeException(nameof(items), $"La cantidad del producto ID {item.ProductId} debe ser mayor a cero.");
 
-            var product = await productCatalog.GetProductAsync(item.ProductId, cancellationToken);
+            var product = await productCatalog.GetProductForOrderAsync(item.ProductId, cancellationToken);
             if (product is null)
                 throw new InvalidOperationException($"El producto con ID {item.ProductId} no existe o no está disponible para venta.");
+
+            if (!product.StockTracked)
+                throw new InvalidOperationException($"El inventario de '{product.Name}' no está configurado en Odoo. No se puede confirmar la compra con cantidades no verificadas.");
+
+            if (item.Quantity > product.Stock)
+                throw new InvalidOperationException($"Stock insuficiente para '{product.Name}'. Disponible: {product.Stock}, solicitado: {item.Quantity}.");
 
             // Validar con el precio real vigente en Odoo (RN-02 / RN-06)
             validatedLines.Add((product.Id, item.Quantity, (decimal)product.Price));
@@ -37,3 +43,4 @@ public sealed class CreateOrder(IOrderService orderService, IProductCatalog prod
         return await orderService.CreateOrderAsync(partnerId, clientOrderRef, validatedLines, cancellationToken);
     }
 }
+

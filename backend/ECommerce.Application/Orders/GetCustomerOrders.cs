@@ -12,3 +12,4 @@ public sealed class GetCustomerOrders(IOrderService orderService)
         return orderService.GetCustomerOrdersAsync(partnerId, cancellationToken);
     }
 }
+

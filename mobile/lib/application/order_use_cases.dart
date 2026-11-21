@@ -20,3 +20,4 @@ class GetOrderDetailUseCase {
   final OrderRepository _repository;
   Future<OrderModel?> call(int orderId) => _repository.getOrderDetail(orderId);
 }
+

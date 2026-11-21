@@ -7,7 +7,9 @@ namespace ECommerce.Infrastructure.Auth;
 
 public sealed class SimpleTokenService
 {
-    private static readonly byte[] SecretKey = Encoding.UTF8.GetBytes("ECommerce_Secret_Key_For_Jwt_Auth_2026_Integration_SuperSecureKey!");
+    private static readonly byte[] SecretKey = Encoding.UTF8.GetBytes(
+        Environment.GetEnvironmentVariable("Jwt__Secret") ??
+        "DevelopmentOnly_ECommerce_Jwt_Secret_Configure_Jwt__Secret_In_Env");
 
     public static string GenerateToken(int customerId, string name, string email, int partnerId)
     {

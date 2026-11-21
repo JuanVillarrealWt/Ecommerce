@@ -1,0 +1,11 @@
+[
+  {
+    "Id": 1,
+    "Name": "Juan Villarreal",
+    "Email": "j@gmail.com",
+    "PasswordHash": "bwoJ58ndfxOWXYk12Dl\u002BEgunc2abYc1UAEwQi986s9g=",
+    "Salt": "gNeZU1rzfr9MrtpL/LAI3A==",
+    "PartnerId": 9,
+    "CreatedAt": "2026-11-17T22:58:25.3161968Z"
+  }
+]

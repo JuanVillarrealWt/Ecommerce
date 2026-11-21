@@ -37,3 +37,4 @@ class OrderModel {
 
   bool get isConfirmed => state == 'sale';
 }
+

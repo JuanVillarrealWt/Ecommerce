@@ -6,3 +6,4 @@ public interface ICategoryCatalog
 {
     Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken = default);
 }
+

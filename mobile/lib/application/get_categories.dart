@@ -6,3 +6,4 @@ class GetCategories {
   final CategoryRepository _repository;
   Future<List<Category>> call() => _repository.getCategories();
 }
+

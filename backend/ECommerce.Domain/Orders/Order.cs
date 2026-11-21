@@ -28,3 +28,4 @@ public sealed class Order(
     public DateTime CreatedAt { get; } = createdAt;
     public IReadOnlyList<OrderItem> Items { get; } = items;
 }
+

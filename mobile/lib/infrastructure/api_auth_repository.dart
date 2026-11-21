@@ -3,16 +3,11 @@ import 'dart:io';
 
 import '../application/auth_repository.dart';
 import '../domain/customer.dart';
+import 'api_config.dart';
 
 class ApiAuthRepository implements AuthRepository {
   ApiAuthRepository({String? baseUrl})
-    : _baseUrl =
-          (baseUrl ??
-                  const String.fromEnvironment(
-                    'API_BASE_URL',
-                    defaultValue: 'http://10.0.2.2:5000',
-                  ))
-              .replaceFirst(RegExp(r'/$'), '');
+    : _baseUrl = normalizeApiBaseUrl(baseUrl ?? apiBaseUrl);
 
   final String _baseUrl;
   Customer? _currentCustomer;
@@ -28,7 +23,7 @@ class ApiAuthRepository implements AuthRepository {
   bool get isAuthenticated => _authToken != null && _currentCustomer != null;
 
   @override
-  Future<Customer> register(String name, String email, String password) async {
+  Future<Customer> register(String name, String email, String password, String province, String phone) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
       final request = await client.postUrl(Uri.parse('$_baseUrl/api/auth/register'));
@@ -37,6 +32,8 @@ class ApiAuthRepository implements AuthRepository {
         'name': name,
         'email': email,
         'password': password,
+        'province': province,
+        'phone': phone,
       }));
 
       final response = await request.close().timeout(const Duration(seconds: 20));
@@ -46,14 +43,6 @@ class ApiAuthRepository implements AuthRepository {
         final err = _extractErrorMessage(body, 'Error al registrar cliente (${response.statusCode})');
         throw HttpException(err);
       }
-
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      final customer = Customer(
-        id: json['id'] as int,
-        name: json['name'] as String,
-        email: json['email'] as String,
-        partnerId: json['partnerId'] as int,
-      );
 
       // Auto-login tras registro
       return await login(email, password);
@@ -90,6 +79,8 @@ class ApiAuthRepository implements AuthRepository {
         name: custJson['name'] as String,
         email: custJson['email'] as String,
         partnerId: custJson['partnerId'] as int,
+        province: custJson['province'] as String? ?? '',
+        phone: custJson['phone'] as String? ?? '',
       );
 
       return _currentCustomer!;
@@ -113,3 +104,4 @@ class ApiAuthRepository implements AuthRepository {
     }
   }
 }
+

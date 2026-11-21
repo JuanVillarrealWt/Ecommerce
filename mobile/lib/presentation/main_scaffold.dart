@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../application/auth_use_cases.dart';
@@ -25,6 +27,9 @@ class MainScaffold extends StatefulWidget {
     required this.registerCustomer,
     required this.logoutCustomer,
     required this.getCurrentCustomer,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+    required this.syncAccountCart,
     super.key,
   });
 
@@ -42,6 +47,9 @@ class MainScaffold extends StatefulWidget {
   final RegisterCustomerUseCase registerCustomer;
   final LogoutCustomerUseCase logoutCustomer;
   final GetCurrentCustomerUseCase getCurrentCustomer;
+  final bool isDarkMode;
+  final VoidCallback onToggleTheme;
+  final Future<void> Function() syncAccountCart;
 
   @override
   State<MainScaffold> createState() => _MainScaffoldState();
@@ -49,15 +57,37 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
+  int _cartSyncVersion = 0;
 
   void _navigateToTab(int index) {
     setState(() => _currentIndex = index);
+  }
+
+  void _onAuthSuccess() {
+    _navigateToTab(0);
+    unawaited(_syncAccountCart());
+  }
+
+  Future<void> _syncAccountCart() async {
+    try {
+      await widget.syncAccountCart();
+      if (mounted) setState(() => _cartSyncVersion++);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo actualizar el carrito de tu cuenta.'),
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
       CatalogPage(
+        cartSyncVersion: _cartSyncVersion,
         getProducts: widget.getProducts,
         getCategories: widget.getCategories,
         getCart: widget.getCart,
@@ -69,6 +99,8 @@ class _MainScaffoldState extends State<MainScaffold> {
         getCurrentCustomer: widget.getCurrentCustomer,
         onNavigateToAuth: () => _navigateToTab(2),
         onNavigateToOrders: () => _navigateToTab(1),
+        isDarkMode: widget.isDarkMode,
+        onToggleTheme: widget.onToggleTheme,
       ),
       OrdersPage(
         getCustomerOrders: widget.getCustomerOrders,
@@ -81,15 +113,12 @@ class _MainScaffoldState extends State<MainScaffold> {
         registerCustomer: widget.registerCustomer,
         logoutCustomer: widget.logoutCustomer,
         getCurrentCustomer: widget.getCurrentCustomer,
-        onAuthSuccess: () => _navigateToTab(0),
+        onAuthSuccess: _onAuthSuccess,
       ),
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: pages,
-      ),
+      body: IndexedStack(index: _currentIndex, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: _navigateToTab,

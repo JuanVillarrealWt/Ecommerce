@@ -1,6 +1,7 @@
 import '../application/cart_repository.dart';
 import '../domain/cart.dart';
 
+/// Lightweight in-memory implementation for tests and isolated use cases.
 class InMemoryCartRepository implements CartRepository {
   Cart _cart = Cart.empty();
 

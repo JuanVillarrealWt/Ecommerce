@@ -13,3 +13,4 @@ public sealed class CategoriesController(GetCategories getCategories) : Controll
     public async Task<ActionResult<IReadOnlyList<CategoryResponse>>> List(CancellationToken cancellationToken) =>
         Ok((await getCategories.ExecuteAsync(cancellationToken)).Select(CategoryResponse.From).ToArray());
 }
+

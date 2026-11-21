@@ -6,3 +6,4 @@ abstract interface class OrderRepository {
   Future<List<OrderModel>> getCustomerOrders();
   Future<OrderModel?> getOrderDetail(int orderId);
 }
+

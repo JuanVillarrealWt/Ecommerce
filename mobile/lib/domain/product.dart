@@ -6,6 +6,8 @@ class Product {
     this.description,
     this.imageUrl,
     this.categoryIds = const [],
+    this.stock = 0,
+    this.stockTracked = false,
   });
 
   final int id;
@@ -14,4 +16,6 @@ class Product {
   final String? description;
   final String? imageUrl;
   final List<int> categoryIds;
+  final int stock;
+  final bool stockTracked;
 }

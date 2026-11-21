@@ -5,16 +5,11 @@ import '../application/auth_repository.dart';
 import '../application/order_repository.dart';
 import '../domain/cart_item.dart';
 import '../domain/order.dart';
+import 'api_config.dart';
 
 class ApiOrderRepository implements OrderRepository {
   ApiOrderRepository(this._authRepository, {String? baseUrl})
-    : _baseUrl =
-          (baseUrl ??
-                  const String.fromEnvironment(
-                    'API_BASE_URL',
-                    defaultValue: 'http://10.0.2.2:5000',
-                  ))
-              .replaceFirst(RegExp(r'/$'), '');
+    : _baseUrl = normalizeApiBaseUrl(baseUrl ?? apiBaseUrl);
 
   final AuthRepository _authRepository;
   final String _baseUrl;
@@ -151,3 +146,4 @@ class ApiOrderRepository implements OrderRepository {
     }
   }
 }
+

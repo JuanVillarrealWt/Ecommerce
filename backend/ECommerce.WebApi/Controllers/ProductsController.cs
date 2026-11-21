@@ -21,4 +21,28 @@ public sealed class ProductsController(GetProducts getProducts, GetProduct getPr
         var product = await getProduct.ExecuteAsync(id, cancellationToken);
         return product is null ? NotFound() : Ok(ProductResponse.From(product));
     }
+
+    [HttpGet("{id:int}/image")]
+    public async Task<IActionResult> Image(int id, CancellationToken cancellationToken)
+    {
+        var product = await getProduct.ExecuteAsync(id, cancellationToken);
+        var source = product?.ImageUrl;
+        if (string.IsNullOrWhiteSpace(source)) return NotFound();
+
+        var marker = source.IndexOf(";base64,", StringComparison.OrdinalIgnoreCase);
+        if (!source.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase) || marker < 0)
+            return NotFound();
+
+        try
+        {
+            Response.Headers.CacheControl = "public, max-age=86400";
+            var contentType = source[5..marker];
+            var bytes = Convert.FromBase64String(source[(marker + 8)..]);
+            return File(bytes, contentType);
+        }
+        catch (FormatException)
+        {
+            return NotFound();
+        }
+    }
 }

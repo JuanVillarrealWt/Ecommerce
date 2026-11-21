@@ -1,33 +1,32 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import '../application/product_repository.dart';
 import '../domain/product.dart';
+import 'api_config.dart';
 
 class ApiProductRepository implements ProductRepository {
   ApiProductRepository({String? baseUrl})
-    : _baseUrl =
-          (baseUrl ??
-                  const String.fromEnvironment(
-                    'API_BASE_URL',
-                    defaultValue: 'http://10.0.2.2:5000',
-                  ))
-              .replaceFirst(RegExp(r'/$'), '');
+    : _baseUrl = normalizeApiBaseUrl(baseUrl ?? apiBaseUrl);
 
   final String _baseUrl;
+  static final HttpClient _client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 6)
+    ..idleTimeout = const Duration(seconds: 30);
 
   @override
   Future<List<Product>> getProducts({int? categoryId}) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
     try {
       final uri = categoryId != null && categoryId > 0
           ? Uri.parse('$_baseUrl/api/products?categoryId=$categoryId')
           : Uri.parse('$_baseUrl/api/products');
 
-      final request = await client.getUrl(uri);
+      final request = await _client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 8));
       final response = await request.close().timeout(
-        const Duration(seconds: 20),
+        const Duration(seconds: 12),
       );
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -39,29 +38,39 @@ class ApiProductRepository implements ProductRepository {
       return rows
           .map((row) => _mapProduct(row as Map<String, dynamic>))
           .toList(growable: false);
-    } finally {
-      client.close(force: true);
+    } on SocketException catch (error) {
+      throw HttpException(
+        'No se pudo conectar con la API en $_baseUrl. Verifica que el teléfono y el computador estén en la misma Wi‑Fi, que la IP sea correcta y que la API esté iniciada. ${error.message}',
+      );
+    } on TimeoutException {
+      throw HttpException('La API en $_baseUrl tardó demasiado en responder.');
     }
   }
 
   @override
   Future<Product?> getProduct(int id) async {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 15);
     try {
-      final request = await client.getUrl(Uri.parse('$_baseUrl/api/products/$id'));
+      final request = await _client
+          .getUrl(Uri.parse('$_baseUrl/api/products/$id'))
+          .timeout(const Duration(seconds: 8));
       final response = await request.close().timeout(
-        const Duration(seconds: 20),
+        const Duration(seconds: 12),
       );
       if (response.statusCode == 404) return null;
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('La API respondió con estado ${response.statusCode}.');
+        throw HttpException(
+          'La API respondió con estado ${response.statusCode}.',
+        );
       }
       final json = jsonDecode(body) as Map<String, dynamic>;
       return _mapProduct(json);
-    } finally {
-      client.close(force: true);
+    } on SocketException catch (error) {
+      throw HttpException(
+        'No se pudo conectar con la API en $_baseUrl. ${error.message}',
+      );
+    } on TimeoutException {
+      throw HttpException('La API en $_baseUrl tardó demasiado en responder.');
     }
   }
 
@@ -77,8 +86,16 @@ class ApiProductRepository implements ProductRepository {
       name: json['name'] as String? ?? 'Producto sin nombre',
       price: (json['price'] as num? ?? 0).toDouble(),
       description: json['description'] as String?,
-      imageUrl: json['imageUrl'] as String?,
+      imageUrl: _resolveImageUrl(json['imageUrl'] as String?),
       categoryIds: catIds,
+      stock: json['stock'] as int? ?? 0,
+      stockTracked: json['stockTracked'] as bool? ?? false,
     );
+  }
+
+  String? _resolveImageUrl(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return null;
+    if (imageUrl.startsWith('/')) return '$_baseUrl$imageUrl';
+    return imageUrl;
   }
 }

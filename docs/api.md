@@ -55,7 +55,9 @@ La app móvil se comunica **únicamente** con estos endpoints. Nunca accede a la
 {
   "name": "Juan Pérez",
   "email": "juan@example.com",
-  "password": "password123"
+  "password": "Password123!",
+  "province": "Pichincha",
+  "phone": "0991234567"
 }
 ```
 * **Respuesta 200 OK:**
@@ -64,9 +66,13 @@ La app móvil se comunica **únicamente** con estos endpoints. Nunca accede a la
   "id": 1,
   "name": "Juan Pérez",
   "email": "juan@example.com",
-  "partnerId": 6
+  "partnerId": 6,
+  "province": "Pichincha",
+  "phone": "0991234567"
 }
 ```
+La provincia debe ser una de las 24 provincias del Ecuador. El celular debe tener 10 dígitos y comenzar con `09`.
+El registro solo se completa cuando Odoo confirma la creación o actualización del contacto. Si Odoo no está disponible o no tiene configurada la provincia seleccionada, el API responde `503` y no crea la cuenta local.
 
 ### Inicio de sesión
 * **Método:** `POST`
@@ -93,7 +99,24 @@ La app móvil se comunica **únicamente** con estos endpoints. Nunca accede a la
 
 ---
 
-## 3. Pedidos (Requiere `Authorization: Bearer <token>`)
+## 3. Carrito de la cuenta (Requiere `Authorization: Bearer <token>`)
+
+### Consultar carrito
+* **Método:** `GET`
+* **Ruta:** `/api/cart`
+* **Respuesta 200 OK:** `{"items": [...]}` con productos y cantidades del cliente autenticado.
+
+### Reemplazar carrito
+* **Método:** `PUT`
+* **Ruta:** `/api/cart`
+* **Cuerpo:** `{"items": [{"productId": 7, "quantity": 2, "productName": "Producto", "unitPrice": 10.0, "description": null, "imageUrl": null, "categoryIds": [], "stock": 10}]}`
+* **Respuesta:** `204 No Content`.
+
+El backend guarda el carrito por ID de cuenta en `account-carts.json`, por lo que se comparte entre dispositivos que inicien sesión contra esta misma API.
+
+---
+
+## 4. Pedidos (Requiere `Authorization: Bearer <token>`)
 
 ### Crear y confirmar pedido
 * **Método:** `POST`

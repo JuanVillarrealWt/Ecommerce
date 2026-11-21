@@ -24,9 +24,13 @@ class Cart {
     }
     final updated = Map<int, CartItem>.of(_items);
     final current = updated[product.id];
+    final nextQuantity = (current?.quantity ?? 0) + quantity;
+    if (product.stockTracked && nextQuantity > product.stock) {
+      throw ArgumentError.value(nextQuantity, 'quantity', 'La cantidad supera el stock disponible (${product.stock}).');
+    }
     updated[product.id] = CartItem(
       product: product,
-      quantity: (current?.quantity ?? 0) + quantity,
+      quantity: nextQuantity,
     );
     return Cart._(Map.unmodifiable(updated));
   }
@@ -42,6 +46,9 @@ class Cart {
     final current = _items[productId];
     if (current == null) {
       return this;
+    }
+    if (current.product.stockTracked && quantity > current.product.stock) {
+      throw ArgumentError.value(quantity, 'quantity', 'La cantidad supera el stock disponible (${current.product.stock}).');
     }
     final updated = Map<int, CartItem>.of(_items)
       ..[productId] = current.withQuantity(quantity);

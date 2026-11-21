@@ -15,7 +15,7 @@ public sealed class AuthController(RegisterCustomer registerCustomer, LoginCusto
     {
         try
         {
-            var customer = await registerCustomer.ExecuteAsync(request.Name, request.Email, request.Password, cancellationToken);
+            var customer = await registerCustomer.ExecuteAsync(request.Name, request.Email, request.Password, request.Province, request.Phone, cancellationToken);
             return Ok(CustomerDto.From(customer));
         }
         catch (ArgumentException ex)
@@ -25,6 +25,10 @@ public sealed class AuthController(RegisterCustomer registerCustomer, LoginCusto
         catch (InvalidOperationException ex)
         {
             return BadRequest(new ProblemDetails { Title = "Operación no permitida", Detail = ex.Message, Status = StatusCodes.Status400BadRequest });
+        }
+        catch (CustomerSyncException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "No se pudo sincronizar con Odoo", Detail = ex.Message, Status = StatusCodes.Status503ServiceUnavailable });
         }
     }
 
@@ -46,5 +50,10 @@ public sealed class AuthController(RegisterCustomer registerCustomer, LoginCusto
         {
             return BadRequest(new ProblemDetails { Title = "Datos inválidos", Detail = ex.Message, Status = StatusCodes.Status400BadRequest });
         }
+        catch (CustomerSyncException ex)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Title = "No se pudo sincronizar con Odoo", Detail = ex.Message, Status = StatusCodes.Status503ServiceUnavailable });
+        }
     }
 }
+

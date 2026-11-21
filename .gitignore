@@ -1,6 +1,7 @@
 # .NET
 **/bin/
 **/obj/
+backend/.api-run/
 .dotnet-cli/
 *.user
 *.suo

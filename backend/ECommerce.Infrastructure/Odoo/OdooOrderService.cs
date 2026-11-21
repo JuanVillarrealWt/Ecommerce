@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using ECommerce.Application.Orders;
 using ECommerce.Domain.Orders;
@@ -47,7 +48,11 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         });
 
         using var createResponse = await http.SendAsync(createRequest, cancellationToken);
-        createResponse.EnsureSuccessStatusCode();
+        if (!createResponse.IsSuccessStatusCode)
+        {
+            var errContent = await createResponse.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Error de Odoo al crear pedido ({createResponse.StatusCode}): {errContent}");
+        }
 
         using var createDoc = await JsonDocument.ParseAsync(await createResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
         if (createDoc.RootElement.ValueKind != JsonValueKind.Array || createDoc.RootElement.GetArrayLength() == 0)
@@ -63,12 +68,15 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         });
 
         using var confirmResponse = await http.SendAsync(confirmRequest, cancellationToken);
-        // Si action_confirm responde OK, se confirma en Odoo
-        confirmResponse.EnsureSuccessStatusCode();
+        if (!confirmResponse.IsSuccessStatusCode)
+        {
+            var errContent = await confirmResponse.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Error de Odoo al confirmar pedido ({confirmResponse.StatusCode}): {errContent}");
+        }
 
-        // 4. Leer el pedido final generado
-        var createdOrder = await GetOrderByIdAsync(orderId, cancellationToken);
-        return createdOrder ?? throw new InvalidOperationException($"No se pudo recuperar el pedido con ID {orderId} recién creado en Odoo.");
+        var orderItems = items.Select(i => new OrderItem(i.ProductId, $"Producto {i.ProductId}", i.Quantity, i.UnitPrice)).ToList();
+        // La orden ya fue creada y confirmada; no esperar otra consulta de lectura a Odoo.
+        return new Order(orderId, $"SO{orderId:D5}", partnerId, "Cliente", "sale", items.Sum(i => i.Quantity * i.UnitPrice), DateTime.UtcNow, orderItems);
     }
 
     public async Task<IReadOnlyList<Order>> GetCustomerOrdersAsync(int partnerId, CancellationToken cancellationToken = default)
@@ -201,12 +209,18 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         return new Order(id, name, partnerId, partnerName, state, amountTotal, createdAt, items);
     }
 
-    private HttpRequestMessage CreateOdooRequest(HttpMethod method, string path, object content)
+    private static readonly JsonSerializerOptions OdooJsonOptions = new()
+    {
+        PropertyNamingPolicy = null
+    };
+
+    private HttpRequestMessage CreateOdooRequest<T>(HttpMethod method, string path, T content)
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
         request.Headers.Add("X-Odoo-Database", _options.Database);
-        request.Content = JsonContent.Create(content);
+        var json = JsonSerializer.Serialize(content, content?.GetType() ?? typeof(T), OdooJsonOptions);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
         return request;
     }
 
@@ -216,3 +230,4 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
             throw new InvalidOperationException("Falta configurar Odoo:Database y Odoo:ApiKey.");
     }
 }
+

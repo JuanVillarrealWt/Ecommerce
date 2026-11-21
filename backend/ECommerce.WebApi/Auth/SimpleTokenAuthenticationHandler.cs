@@ -34,3 +34,4 @@ public sealed class SimpleTokenAuthenticationHandler(
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }
+

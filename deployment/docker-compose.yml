@@ -26,7 +26,7 @@ services:
       USER: odoo
       PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
     ports:
-      - "127.0.0.1:8069:8069"
+      - "8069:8069"
     volumes:
       - odoo-web-data:/var/lib/odoo
 

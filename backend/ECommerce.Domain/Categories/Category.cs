@@ -6,3 +6,4 @@ public sealed class Category(int id, string name, int? parentId = null)
     public string Name { get; } = name;
     public int? ParentId { get; } = parentId;
 }
+

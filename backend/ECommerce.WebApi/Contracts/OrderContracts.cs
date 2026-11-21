@@ -32,3 +32,4 @@ public sealed record OrderResponse(
         order.CreatedAt,
         order.Items.Select(OrderItemDto.From).ToArray());
 }
+
