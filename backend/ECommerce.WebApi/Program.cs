@@ -2,9 +2,14 @@ using ECommerce.Application.Categories;
 using ECommerce.Application.Customers;
 using ECommerce.Application.Orders;
 using ECommerce.Application.Products;
+using ECommerce.Application.CustomerFeatures;
 using ECommerce.Infrastructure.Auth;
 using ECommerce.Infrastructure.Carts;
 using ECommerce.Infrastructure.Odoo;
+using ECommerce.Infrastructure.Payments;
+using ECommerce.Infrastructure.CustomerFeatures;
+using ECommerce.Infrastructure.Orders;
+using ECommerce.Application.Payments;
 using ECommerce.WebApi.Auth;
 using Microsoft.AspNetCore.Authentication;
 
@@ -12,23 +17,38 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Configuración de Odoo
 builder.Services.Configure<OdooOptions>(builder.Configuration.GetSection(OdooOptions.SectionName));
+builder.Services.Configure<StripePaymentOptions>(builder.Configuration.GetSection(StripePaymentOptions.SectionName));
 
 // Clientes HTTP hacia Odoo
 builder.Services.AddHttpClient<IProductCatalog, OdooProductCatalog>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
 builder.Services.AddHttpClient<ICategoryCatalog, OdooCategoryCatalog>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
 builder.Services.AddHttpClient<IOrderService, OdooOrderService>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
 builder.Services.AddHttpClient<ICustomerService, CustomerService>((sp, client) => ConfigureOdooHttpClient(client, builder.Configuration));
+builder.Services.AddHttpClient<IPaymentGateway, StripePaymentGateway>();
+builder.Services.AddSingleton<IPaymentAttemptStore, JsonPaymentAttemptStore>();
 builder.Services.AddSingleton<IAccountCartStore, JsonAccountCartStore>();
+builder.Services.AddSingleton<ICustomerFeaturesStore, JsonCustomerFeaturesStore>();
+builder.Services.AddSingleton<IOrderSnapshotStore, JsonOrderSnapshotStore>();
 
 // Casos de uso de la aplicación
 builder.Services.AddScoped<GetProducts>();
 builder.Services.AddScoped<GetProduct>();
+builder.Services.AddScoped<ManageCustomerFeatures>();
 builder.Services.AddScoped<GetCategories>();
 builder.Services.AddScoped<RegisterCustomer>();
 builder.Services.AddScoped<LoginCustomer>();
 builder.Services.AddScoped<CreateOrder>();
 builder.Services.AddScoped<GetCustomerOrders>();
 builder.Services.AddScoped<GetCustomerOrderDetail>();
+builder.Services.AddScoped<ProcessPaymentWebhook>();
+builder.Services.AddScoped<PrepareCheckoutConfirmation>();
+builder.Services.AddScoped(sp => new StartCheckout(
+    sp.GetRequiredService<CreateOrder>(),
+    sp.GetRequiredService<IPaymentGateway>(),
+    sp.GetRequiredService<IPaymentAttemptStore>(),
+    sp.GetRequiredService<ICustomerService>(),
+    builder.Configuration.GetSection("DiscountCoupons").Get<List<DiscountCoupon>>() ?? [],
+    builder.Configuration[$"{StripePaymentOptions.SectionName}:Currency"] ?? "usd"));
 
 // Autenticación por token Bearer (JWT)
 builder.Services.AddAuthentication(SimpleTokenAuthenticationHandler.SchemeName)
@@ -119,9 +139,13 @@ app.MapGet("/doc", () => Results.Content("""
 
     <h2>Pedidos (Requiere Token Bearer)</h2>
     <div class="endpoint">
-        <span class="tag post">POST</span><span class="route">/api/orders</span><span class="auth">Requiere Auth</span>
-        <p>Crea cotización y la confirma en Odoo como orden de venta (<code>sale.order</code>).</p>
+        <span class="tag post">POST</span><span class="route">/api/checkout/payments</span><span class="auth">Requiere Auth</span>
+        <p>Valida el carrito, crea una cotización y devuelve el secreto del PaymentIntent de Stripe. Odoo confirma el pedido solo después del webhook de pago.</p>
         <pre>{ "items": [ { "productId": 7, "quantity": 1 }, { "productId": 8, "quantity": 2 } ] }</pre>
+    </div>
+    <div class="endpoint">
+        <span class="tag post">POST</span><span class="route">/api/checkout/webhook</span>
+        <p>Recibe la notificación firmada de Stripe para confirmar las órdenes pagadas.</p>
     </div>
     <div class="endpoint">
         <span class="tag get">GET</span><span class="route">/api/orders</span><span class="auth">Requiere Auth</span>

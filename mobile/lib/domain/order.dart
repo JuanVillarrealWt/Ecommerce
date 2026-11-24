@@ -22,6 +22,9 @@ class OrderModel {
     required this.partnerName,
     required this.state,
     required this.amountTotal,
+    this.amountUntaxed = 0,
+    this.amountTax = 0,
+    this.received = false,
     required this.createdAt,
     required this.items,
   });
@@ -30,11 +33,13 @@ class OrderModel {
   final String name;
   final int partnerId;
   final String partnerName;
-  final String state; // "draft", "sale", "cancel"
+  final String state; // "draft", "sale", "done", "cancel"
   final double amountTotal;
+  final double amountUntaxed;
+  final double amountTax;
+  final bool received;
   final DateTime createdAt;
   final List<OrderItemModel> items;
 
-  bool get isConfirmed => state == 'sale';
+  bool get isConfirmed => state == 'sale' || state == 'done';
 }
-

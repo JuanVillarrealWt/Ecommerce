@@ -17,7 +17,11 @@ public sealed class Order(
     string state,
     decimal amountTotal,
     DateTime createdAt,
-    IReadOnlyList<OrderItem> items)
+    IReadOnlyList<OrderItem> items,
+    string currencyCode = "USD",
+    decimal amountUntaxed = 0m,
+    decimal amountTax = 0m,
+    bool received = false)
 {
     public int Id { get; } = id;
     public string Name { get; } = name;
@@ -27,5 +31,9 @@ public sealed class Order(
     public decimal AmountTotal { get; } = amountTotal;
     public DateTime CreatedAt { get; } = createdAt;
     public IReadOnlyList<OrderItem> Items { get; } = items;
+    public string CurrencyCode { get; } = currencyCode;
+    public decimal AmountUntaxed { get; } = amountUntaxed;
+    public decimal AmountTax { get; } = amountTax;
+    public bool Received { get; } = received;
 }
 

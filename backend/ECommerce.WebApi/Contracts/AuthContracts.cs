@@ -5,6 +5,7 @@ namespace ECommerce.WebApi.Contracts;
 public sealed record RegisterRequest(string Name, string Email, string Password, string Province, string Phone);
 
 public sealed record LoginRequest(string Email, string Password);
+public sealed record UpdateProfileRequest(string Name, string Province, string Phone);
 
 public sealed record CustomerDto(int Id, string Name, string Email, int PartnerId, string Province, string Phone)
 {

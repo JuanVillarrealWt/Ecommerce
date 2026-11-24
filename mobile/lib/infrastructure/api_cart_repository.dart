@@ -4,6 +4,7 @@ import 'dart:io';
 
 import '../application/cart_repository.dart';
 import '../domain/cart.dart';
+import '../domain/cart_item.dart';
 import '../domain/product.dart';
 import 'api_auth_repository.dart';
 import 'api_config.dart';
@@ -24,36 +25,78 @@ class ApiCartRepository implements CartRepository {
   final String _baseUrl;
   Cart? _pendingSnapshot;
   bool _syncing = false;
-  int _localRevision = 0;
+  bool _initialSyncing = false;
+  int? _accountReadyCustomerId;
 
   @override
-  Future<Cart> getCart() => _local.getCart();
+  Future<Cart> getCart() {
+    final customerId = _auth.getCurrentCustomer()?.id;
+    if (customerId != null && _accountReadyCustomerId == customerId) {
+      return _local.getAccountCart(customerId);
+    }
+    return _local.getGuestCart();
+  }
 
   @override
   Future<void> save(Cart cart) async {
-    _localRevision++;
-    await _local.save(cart);
-    if (_auth.getAuthToken() == null) return;
+    final customerId = _auth.getCurrentCustomer()?.id;
+    final token = _auth.getAuthToken();
+    if (customerId == null ||
+        token == null ||
+        _accountReadyCustomerId != customerId ||
+        _initialSyncing) {
+      await _local.saveGuestCart(cart);
+      return;
+    }
+    await _local.saveAccountCart(customerId, cart);
     _pendingSnapshot = cart;
     unawaited(_drainPendingWrites());
   }
 
-  /// Downloads the signed-in customer's cart and replaces the local cache.
-  /// Called after login/register so another device's changes become visible.
+  /// Merges the guest cart with the signed-in customer's cart, then persists
+  /// the result both remotely and in the customer's device-specific cache.
   Future<void> syncFromAccount() async {
     final token = _auth.getAuthToken();
-    if (token == null) return;
-    final revisionAtStart = _localRevision;
+    final customerId = _auth.getCurrentCustomer()?.id;
+    if (token == null || customerId == null) return;
+    _initialSyncing = true;
+    _accountReadyCustomerId = null;
     _pendingSnapshot = null;
-    final response = await _send(HttpMethod.get, token: token);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException(
-        _errorMessage(response.body, 'No se pudo sincronizar el carrito.'),
-      );
-    }
+    try {
+      final response = await _send(HttpMethod.get, token: token);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          _errorMessage(response.body, 'No se pudo sincronizar el carrito.'),
+        );
+      }
 
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    var restored = Cart.empty();
+      final accountCart = _cartFromPayload(response.body);
+      // Read guest data after the request so products added while the API call
+      // was in progress are included as well.
+      final guestCart = await _local.getGuestCart();
+      final merged = accountCart.mergedWith(guestCart);
+      final saved = await _send(
+        HttpMethod.put,
+        token: token,
+        body: _encodeCart(merged),
+      );
+      if (saved.statusCode < 200 || saved.statusCode >= 300) {
+        throw HttpException(
+          _errorMessage(saved.body, 'No se pudo guardar el carrito combinado.'),
+        );
+      }
+
+      await _local.saveAccountCart(customerId, merged);
+      await _local.clearGuestCart();
+      _accountReadyCustomerId = customerId;
+    } finally {
+      _initialSyncing = false;
+    }
+  }
+
+  Cart _cartFromPayload(String body) {
+    final payload = jsonDecode(body) as Map<String, dynamic>;
+    final restored = <CartItem>[];
     for (final entry in payload['items'] as List<dynamic>? ?? const []) {
       final item = entry as Map<String, dynamic>;
       final product = Product(
@@ -68,16 +111,29 @@ class ApiCartRepository implements CartRepository {
         stockTracked: item['stockTracked'] as bool? ?? false,
       );
       final quantity = item['quantity'] as int? ?? 1;
-      if (quantity > 0) restored = restored.add(product, quantity: quantity);
+      if (quantity > 0) {
+        restored.add(CartItem(product: product, quantity: quantity));
+      }
     }
-    if (_localRevision == revisionAtStart) {
-      _localRevision++;
-      await _local.save(restored);
-    } else {
-      _pendingSnapshot = await _local.getCart();
-      unawaited(_drainPendingWrites());
-    }
+    return Cart.fromItems(restored);
   }
+
+  String _encodeCart(Cart cart) => jsonEncode({
+    'items': [
+      for (final item in cart.items)
+        {
+          'productId': item.product.id,
+          'quantity': item.quantity,
+          'productName': item.product.name,
+          'unitPrice': item.product.price,
+          'description': item.product.description,
+          'imageUrl': _relativeImageUrl(item.product.imageUrl),
+          'categoryIds': item.product.categoryIds,
+          'stock': item.product.stock,
+          'stockTracked': item.product.stockTracked,
+        },
+    ],
+  });
 
   Future<void> _drainPendingWrites() async {
     if (_syncing) return;
@@ -89,26 +145,15 @@ class ApiCartRepository implements CartRepository {
         inFlight = snapshot;
         _pendingSnapshot = null;
         final token = _auth.getAuthToken();
-        if (token == null) return;
+        final customerId = _auth.getCurrentCustomer()?.id;
+        if (token == null ||
+            customerId == null ||
+            _accountReadyCustomerId != customerId)
+          return;
         final response = await _send(
           HttpMethod.put,
           token: token,
-          body: jsonEncode({
-            'items': [
-              for (final item in snapshot.items)
-                {
-                  'productId': item.product.id,
-                  'quantity': item.quantity,
-                  'productName': item.product.name,
-                  'unitPrice': item.product.price,
-                  'description': item.product.description,
-                  'imageUrl': _relativeImageUrl(item.product.imageUrl),
-                  'categoryIds': item.product.categoryIds,
-                  'stock': item.product.stock,
-                  'stockTracked': item.product.stockTracked,
-                },
-            ],
-          }),
+          body: _encodeCart(snapshot),
         );
         if (response.statusCode < 200 || response.statusCode >= 300) {
           _pendingSnapshot ??= snapshot;

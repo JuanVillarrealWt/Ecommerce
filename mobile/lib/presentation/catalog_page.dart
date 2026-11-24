@@ -1,17 +1,22 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../application/auth_use_cases.dart';
 import '../application/cart_use_cases.dart';
+import '../application/checkout_use_cases.dart';
 import '../application/get_categories.dart';
 import '../application/get_products.dart';
-import '../application/order_use_cases.dart';
+import '../application/customer_features_repository.dart';
+import '../domain/checkout_payment.dart';
 import '../domain/cart.dart';
+import '../domain/cart_item.dart';
 import '../domain/category.dart';
 import '../domain/product.dart';
 import 'product_detail_page.dart';
 import 'product_image.dart';
+import '../infrastructure/stripe_checkout_platform.dart' as stripe_checkout;
 
 class CatalogPage extends StatefulWidget {
   const CatalogPage({
@@ -22,13 +27,15 @@ class CatalogPage extends StatefulWidget {
     required this.setCartQuantity,
     required this.removeProductFromCart,
     required this.clearCart,
-    required this.createOrder,
+    required this.startCheckout,
+    required this.getCheckoutStatus,
     required this.getCurrentCustomer,
     required this.onNavigateToAuth,
     required this.onNavigateToOrders,
     required this.isDarkMode,
     required this.onToggleTheme,
     required this.cartSyncVersion,
+    this.customerFeaturesRepository,
     super.key,
   });
 
@@ -39,13 +46,15 @@ class CatalogPage extends StatefulWidget {
   final SetCartQuantity setCartQuantity;
   final RemoveProductFromCart removeProductFromCart;
   final ClearCart clearCart;
-  final CreateOrderUseCase createOrder;
+  final StartCheckoutUseCase startCheckout;
+  final GetCheckoutStatusUseCase getCheckoutStatus;
   final GetCurrentCustomerUseCase getCurrentCustomer;
   final VoidCallback onNavigateToAuth;
   final VoidCallback onNavigateToOrders;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
   final int cartSyncVersion;
+  final CustomerFeaturesRepository? customerFeaturesRepository;
 
   @override
   State<CatalogPage> createState() => _CatalogPageState();
@@ -60,6 +69,64 @@ class _CatalogPageState extends State<CatalogPage> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String _sortBy = 'recommended';
+  final Set<int> _favoriteProductIds = {};
+  final Set<int> _purchasedProductIds = {};
+
+  Future<void> _refreshCatalogAfterPurchase(
+    List<CartItem> purchasedItems,
+  ) async {
+    final quantities = {
+      for (final item in purchasedItems) item.product.id: item.quantity,
+    };
+    setState(() {
+      _productsFuture = _productsFuture.then(
+        (products) => products
+            .map((product) {
+              final quantity = quantities[product.id] ?? 0;
+              if (!product.stockTracked || quantity == 0) return product;
+              return Product(
+                id: product.id,
+                name: product.name,
+                price: product.price,
+                description: product.description,
+                imageUrl: product.imageUrl,
+                categoryIds: product.categoryIds,
+                stock: (product.stock - quantity)
+                    .clamp(0, product.stock)
+                    .toInt(),
+                stockTracked: product.stockTracked,
+              );
+            })
+            .toList(growable: false),
+      );
+    });
+    for (var attempt = 0; attempt < 5; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      try {
+        final fresh = await widget.getProducts(categoryId: _selectedCategoryId);
+        final inventoryUpdated = purchasedItems
+            .where((item) => item.product.stockTracked)
+            .every((item) {
+              final product = fresh
+                  .where((candidate) => candidate.id == item.product.id)
+                  .firstOrNull;
+              return product == null ||
+                  product.stock <=
+                      (item.product.stock - item.quantity).clamp(
+                        0,
+                        item.product.stock,
+                      );
+            });
+        if (inventoryUpdated) {
+          if (mounted) setState(() => _productsFuture = Future.value(fresh));
+          return;
+        }
+      } catch (_) {
+        // Keep the immediate local stock estimate if the API is still syncing.
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -67,6 +134,7 @@ class _CatalogPageState extends State<CatalogPage> {
     _loadCategories();
     _loadProducts();
     _refreshCartCount();
+    _loadFavorites();
   }
 
   @override
@@ -80,6 +148,81 @@ class _CatalogPageState extends State<CatalogPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cartSyncVersion != widget.cartSyncVersion) {
       _refreshCartCount();
+      _loadFavorites();
+    }
+  }
+
+  Future<void> _loadFavorites() async {
+    if (widget.getCurrentCustomer() == null ||
+        widget.customerFeaturesRepository == null) {
+      if (mounted)
+        setState(() {
+          _favoriteProductIds.clear();
+          _purchasedProductIds.clear();
+        });
+      return;
+    }
+    try {
+      final data = await widget.customerFeaturesRepository!.load();
+      final ids = (data['favoriteProductIds'] as List? ?? [])
+          .whereType<int>()
+          .toSet();
+      final purchasedIds = (data['purchasedProductIds'] as List? ?? [])
+          .whereType<int>()
+          .toSet();
+      if (mounted)
+        setState(() {
+          _favoriteProductIds
+            ..clear()
+            ..addAll(ids);
+          _purchasedProductIds
+            ..clear()
+            ..addAll(purchasedIds);
+        });
+    } catch (_) {}
+  }
+
+  Future<bool> _toggleFavorite(Product product) async {
+    if (widget.getCurrentCustomer() == null ||
+        widget.customerFeaturesRepository == null) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Inicia sesión para guardar favoritos.'),
+          ),
+        );
+      widget.onNavigateToAuth();
+      return false;
+    }
+    final wasFavorite = _favoriteProductIds.contains(product.id);
+    setState(() {
+      if (wasFavorite) {
+        _favoriteProductIds.remove(product.id);
+      } else {
+        _favoriteProductIds.add(product.id);
+      }
+    });
+    try {
+      if (wasFavorite) {
+        await widget.customerFeaturesRepository!.removeFavorite(product.id);
+      } else {
+        await widget.customerFeaturesRepository!.addFavorite(product.id);
+      }
+      return true;
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          if (wasFavorite) {
+            _favoriteProductIds.add(product.id);
+          } else {
+            _favoriteProductIds.remove(product.id);
+          }
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
+      }
+      return false;
     }
   }
 
@@ -176,10 +319,35 @@ class _CatalogPageState extends State<CatalogPage> {
     var cart = await widget.getCart();
     if (!mounted) return;
 
+    var savedAddresses = <Map<String, dynamic>>[];
+    final customer = widget.getCurrentCustomer();
+    if (customer != null && widget.customerFeaturesRepository != null) {
+      try {
+        final data = await widget.customerFeaturesRepository!.load();
+        savedAddresses = (data['addresses'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      } catch (_) {
+        // Address selection is optional when the account data cannot load.
+      }
+    }
+    if (!mounted) return;
+
     await showDialog<void>(
       context: context,
       builder: (sheetContext) {
         var isSubmitting = false;
+        var couponCode = '';
+        String? couponError;
+        final defaultAddressIndex = savedAddresses.indexWhere(
+          (address) => address['isDefault'] == true,
+        );
+        var selectedAddressId = savedAddresses.isEmpty
+            ? null
+            : savedAddresses[defaultAddressIndex < 0
+                      ? 0
+                      : defaultAddressIndex]['id']
+                  ?.toString();
         return StatefulBuilder(
           builder: (sheetContext, setSheetState) {
             Future<void> update(Future<Cart> Function() action) async {
@@ -309,7 +477,8 @@ class _CatalogPageState extends State<CatalogPage> {
                                               );
                                           controller.selection = TextSelection(
                                             baseOffset: 0,
-                                            extentOffset: controller.text.length,
+                                            extentOffset:
+                                                controller.text.length,
                                           );
                                           final newQty = await showDialog<int>(
                                             context: sheetContext,
@@ -331,13 +500,33 @@ class _CatalogPageState extends State<CatalogPage> {
                                                     keyboardType:
                                                         TextInputType.number,
                                                     inputFormatters: [
-                                                      TextInputFormatter.withFunction((oldValue, newValue) {
-                                                        final text = newValue.text;
-                                                        if (text.isEmpty) return newValue;
-                                                        final parsed = int.tryParse(text);
-                                                        if (!RegExp(r'^\d+$').hasMatch(text) || text.startsWith('0') || parsed == null || parsed > item.product.stock) return oldValue;
-                                                        return newValue;
-                                                      }),
+                                                      TextInputFormatter.withFunction(
+                                                        (oldValue, newValue) {
+                                                          final text =
+                                                              newValue.text;
+                                                          if (text.isEmpty)
+                                                            return newValue;
+                                                          final parsed =
+                                                              int.tryParse(
+                                                                text,
+                                                              );
+                                                          if (!RegExp(
+                                                                r'^\d+$',
+                                                              ).hasMatch(
+                                                                text,
+                                                              ) ||
+                                                              text.startsWith(
+                                                                '0',
+                                                              ) ||
+                                                              parsed == null ||
+                                                              parsed >
+                                                                  item
+                                                                      .product
+                                                                      .stock)
+                                                            return oldValue;
+                                                          return newValue;
+                                                        },
+                                                      ),
                                                     ],
                                                     autofocus: true,
                                                     decoration:
@@ -358,8 +547,14 @@ class _CatalogPageState extends State<CatalogPage> {
                                                 ),
                                                 FilledButton(
                                                   onPressed: () {
-                                                    final val = int.tryParse(controller.text);
-                                                    if (val == null || val < 1 || val > item.product.stock) return;
+                                                    final val = int.tryParse(
+                                                      controller.text,
+                                                    );
+                                                    if (val == null ||
+                                                        val < 1 ||
+                                                        val >
+                                                            item.product.stock)
+                                                      return;
                                                     Navigator.pop(
                                                       dialogCtx,
                                                       val,
@@ -441,14 +636,17 @@ class _CatalogPageState extends State<CatalogPage> {
                                       ),
                                       IconButton(
                                         tooltip: 'Aumentar',
-                                        onPressed: item.quantity < item.product.stock ? () async {
-                                            await update(
-                                              () => widget.setCartQuantity(
-                                                item.product.id,
-                                                item.quantity + 1,
-                                              ),
-                                            );
-                                          } : null,
+                                        onPressed:
+                                            item.quantity < item.product.stock
+                                            ? () async {
+                                                await update(
+                                                  () => widget.setCartQuantity(
+                                                    item.product.id,
+                                                    item.quantity + 1,
+                                                  ),
+                                                );
+                                              }
+                                            : null,
                                         icon: const Icon(
                                           Icons.add_circle_outline,
                                         ),
@@ -512,6 +710,64 @@ class _CatalogPageState extends State<CatalogPage> {
                             ).colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          onChanged: (value) => setSheetState(() {
+                            couponCode = value;
+                            couponError = null;
+                          }),
+                          textCapitalization: TextCapitalization.characters,
+                          decoration: const InputDecoration(
+                            labelText: 'Código de descuento (opcional)',
+                            hintText: 'Ejemplo: CUMBRES10',
+                            prefixIcon: Icon(Icons.local_offer_outlined),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        if (couponError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, left: 12),
+                            child: Text(
+                              couponError!,
+                              style: TextStyle(
+                                color: Theme.of(sheetContext).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        if (savedAddresses.isNotEmpty) ...[
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedAddressId,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Dirección de entrega',
+                              prefixIcon: Icon(Icons.location_on_outlined),
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              for (final address in savedAddresses)
+                                DropdownMenuItem(
+                                  value: address['id'].toString(),
+                                  child: Text(
+                                    '${address['label']} · ${address['street']}, ${address['city']}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: (value) =>
+                                setSheetState(() => selectedAddressId = value),
+                          ),
+                        ] else if (customer != null) ...[
+                          Text(
+                            'No tienes direcciones guardadas. Se usará la dirección registrada en tu perfil de Odoo.',
+                            style: TextStyle(
+                              color: Theme.of(
+                                sheetContext,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -546,18 +802,91 @@ class _CatalogPageState extends State<CatalogPage> {
 
                                     setSheetState(() => isSubmitting = true);
                                     try {
-                                      final order = await widget.createOrder(
-                                        cart.items,
-                                      );
+                                      final checkout = await widget
+                                          .startCheckout(
+                                            cart.items,
+                                            couponCode: couponCode,
+                                            savedAddressId: selectedAddressId,
+                                          );
+                                      if (!mounted || !sheetContext.mounted) {
+                                        return;
+                                      }
+                                      final paymentSubmitted =
+                                          await stripe_checkout
+                                              .presentCheckoutPayment(
+                                                context,
+                                                checkout,
+                                                prepareConfirmation:
+                                                    (
+                                                      shouldSavePaymentMethod,
+                                                    ) => shouldSavePaymentMethod
+                                                    ? widget.startCheckout
+                                                          .prepareConfirmation(
+                                                            checkout.attemptId,
+                                                          )
+                                                    : Future<String>.value(
+                                                        checkout.clientSecret,
+                                                      ),
+                                              );
+                                      if (!context.mounted ||
+                                          !sheetContext.mounted) {
+                                        return;
+                                      }
+                                      if (!paymentSubmitted) {
+                                        setSheetState(
+                                          () => isSubmitting = false,
+                                        );
+                                        return;
+                                      }
+
+                                      CheckoutPaymentStatus? paymentStatus;
+                                      for (var i = 0; i < 25; i++) {
+                                        try {
+                                          paymentStatus = await widget
+                                              .getCheckoutStatus(
+                                                checkout.attemptId,
+                                              );
+                                          if (paymentStatus.status == 'paid' ||
+                                              paymentStatus.status ==
+                                                  'failed' ||
+                                              paymentStatus.status ==
+                                                  'canceled') {
+                                            break;
+                                          }
+                                        } catch (_) {
+                                          // A slow API connection leaves the payment pending for server verification.
+                                        }
+                                        await Future<void>.delayed(
+                                          const Duration(seconds: 1),
+                                        );
+                                      }
+
+                                      if (paymentStatus?.status == 'failed' ||
+                                          paymentStatus?.status == 'canceled') {
+                                        throw Exception(
+                                          'El pago no se completó. No se confirmó el pedido.',
+                                        );
+                                      }
+
                                       await widget.clearCart();
                                       await _refreshCartCount();
-
-                                      if (mounted) {
-                                        Navigator.pop(
-                                          sheetContext,
-                                        ); // quitar sheet
+                                      if (paymentStatus?.status == 'paid' &&
+                                          mounted) {
+                                        unawaited(
+                                          _refreshCatalogAfterPurchase(
+                                            cart.items,
+                                          ),
+                                        );
+                                      }
+                                      if (mounted &&
+                                          context.mounted &&
+                                          sheetContext.mounted) {
+                                        Navigator.pop(sheetContext);
+                                        final paymentConfirmed =
+                                            paymentStatus?.status == 'paid';
                                         showDialog<void>(
                                           context: context,
+                                          barrierDismissible: false,
                                           builder: (ctx) => AlertDialog(
                                             title: const Row(
                                               children: [
@@ -566,7 +895,14 @@ class _CatalogPageState extends State<CatalogPage> {
                                                   color: Colors.green,
                                                 ),
                                                 SizedBox(width: 8),
-                                                Text('¡Pedido Confirmado!'),
+                                                Expanded(
+                                                  child: Text(
+                                                    '¡Pago recibido!',
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                             content: Column(
@@ -575,14 +911,13 @@ class _CatalogPageState extends State<CatalogPage> {
                                                   CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  'Se registró exitosamente en Odoo con el número: ${order.name}',
+                                                  paymentConfirmed
+                                                      ? 'Tu pedido ${checkout.orderName} fue confirmado en Odoo.'
+                                                      : 'Recibimos la confirmación del pago. Estamos verificando el pedido ${checkout.orderName}; aparecerá en Mis Pedidos en breve.',
                                                 ),
                                                 const SizedBox(height: 8),
                                                 Text(
-                                                  'Total verificado: \$${order.amountTotal.toStringAsFixed(2)}',
-                                                ),
-                                                Text(
-                                                  'Estado: ${order.isConfirmed ? 'Orden de venta confirmada' : 'Cotización'}',
+                                                  'Total: ${checkout.currency.toUpperCase()} ${checkout.amountTotal.toStringAsFixed(2)}',
                                                 ),
                                               ],
                                             ),
@@ -608,8 +943,30 @@ class _CatalogPageState extends State<CatalogPage> {
                                         );
                                       }
                                     } catch (e) {
+                                      if (!mounted || !sheetContext.mounted) {
+                                        return;
+                                      }
                                       setSheetState(() => isSubmitting = false);
                                       if (mounted) {
+                                        final message = e
+                                            .toString()
+                                            .replaceFirst('HttpException: ', '')
+                                            .replaceFirst('Exception: ', '');
+                                        final invalidCoupon =
+                                            couponCode.trim().isNotEmpty &&
+                                            (message.toLowerCase().contains(
+                                                  'código de descuento no es válido',
+                                                ) ||
+                                                message.toLowerCase().contains(
+                                                  'no aplica a los productos',
+                                                ));
+                                        if (invalidCoupon) {
+                                          setSheetState(
+                                            () => couponError =
+                                                'Código no válido o no aplicable a los productos del carrito.',
+                                          );
+                                          return;
+                                        }
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
@@ -635,8 +992,8 @@ class _CatalogPageState extends State<CatalogPage> {
                                 : const Icon(Icons.shopping_cart_checkout),
                             label: Text(
                               isSubmitting
-                                  ? 'Procesando en Odoo...'
-                                  : 'Confirmar Pedido',
+                                  ? 'Preparando pago seguro...'
+                                  : 'Pagar con Stripe',
                               style: const TextStyle(fontSize: 16),
                             ),
                           ),
@@ -683,6 +1040,27 @@ class _CatalogPageState extends State<CatalogPage> {
             icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view),
             onPressed: () => setState(() => _isGridView = !_isGridView),
           ),
+          if (!_isSearching)
+            PopupMenuButton<String>(
+              tooltip: 'Ordenar productos',
+              icon: const Icon(Icons.sort),
+              onSelected: (value) => setState(() => _sortBy = value),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'recommended',
+                  child: Text('Recomendados'),
+                ),
+                PopupMenuItem(
+                  value: 'price_asc',
+                  child: Text('Precio: menor a mayor'),
+                ),
+                PopupMenuItem(
+                  value: 'price_desc',
+                  child: Text('Precio: mayor a menor'),
+                ),
+                PopupMenuItem(value: 'name', child: Text('Nombre: A a Z')),
+              ],
+            ),
           if (_isSearching)
             IconButton(
               tooltip: 'Cerrar búsqueda',
@@ -809,15 +1187,30 @@ class _CatalogPageState extends State<CatalogPage> {
                 }
                 final allProducts = snapshot.data ?? const [];
                 final query = _searchQuery.trim().toLowerCase();
-                final products = query.isEmpty
-                    ? allProducts
-                    : allProducts.where((p) {
-                        final nameMatch = p.name.toLowerCase().contains(query);
-                        final descMatch =
-                            p.description?.toLowerCase().contains(query) ??
-                            false;
-                        return nameMatch || descMatch;
-                      }).toList();
+                final products =
+                    (query.isEmpty
+                            ? allProducts
+                            : allProducts.where((p) {
+                                final nameMatch = p.name.toLowerCase().contains(
+                                  query,
+                                );
+                                final descMatch =
+                                    p.description?.toLowerCase().contains(
+                                      query,
+                                    ) ??
+                                    false;
+                                return nameMatch || descMatch;
+                              }).toList())
+                        .toList();
+                if (_sortBy == 'price_asc')
+                  products.sort((a, b) => a.price.compareTo(b.price));
+                if (_sortBy == 'price_desc')
+                  products.sort((a, b) => b.price.compareTo(a.price));
+                if (_sortBy == 'name')
+                  products.sort(
+                    (a, b) =>
+                        a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+                  );
 
                 if (products.isEmpty) {
                   return Center(
@@ -914,6 +1307,24 @@ class _CatalogPageState extends State<CatalogPage> {
   }) => _ProductCard(
     product: product,
     isGrid: isGrid,
+    isPurchased: _purchasedProductIds.contains(product.id),
+    onAddToCart: () async {
+      try {
+        await widget.addProductToCart(product, quantity: 1);
+        await _refreshCartCount();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${product.name} se agregó al carrito.')),
+          );
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$error')));
+        }
+      }
+    },
     onTap: () async {
       final cart = await widget.getCart();
       final inCartQty = cart.items
@@ -924,6 +1335,9 @@ class _CatalogPageState extends State<CatalogPage> {
         MaterialPageRoute(
           builder: (_) => ProductDetailPage(
             product: product,
+            customerFeaturesRepository: widget.customerFeaturesRepository,
+            isFavorite: _favoriteProductIds.contains(product.id),
+            onToggleFavorite: () => _toggleFavorite(product),
             maxAvailableQuantity: product.stock - inCartQty,
             onAddToCart: (p, q) async {
               await widget.addProductToCart(p, quantity: q);
@@ -932,65 +1346,6 @@ class _CatalogPageState extends State<CatalogPage> {
           ),
         ),
       );
-    },
-    onAdd: () async {
-      if (!product.stockTracked) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Inventario no configurado en Odoo. No se puede agregar este producto.',
-              ),
-            ),
-          );
-        }
-        return;
-      }
-      if (product.stock <= 0) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'El producto "${product.name}" está agotado en Odoo.',
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-      final currentCart = await widget.getCart();
-      final existingItem = currentCart.items
-          .where((item) => item.product.id == product.id)
-          .firstOrNull;
-      final inCartQty = existingItem?.quantity ?? 0;
-
-      if (inCartQty >= product.stock) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Stock máximo alcanzado: solo disponemos de ${product.stock} uds.',
-              ),
-              backgroundColor: Colors.orange.shade800,
-            ),
-          );
-        }
-        return;
-      }
-
-      await widget.addProductToCart(product);
-      await _refreshCartCount();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Agregado: ${product.name} (${inCartQty + 1} de ${product.stock} uds)',
-            ),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
     },
   );
 }
@@ -1040,14 +1395,16 @@ class _ProductCard extends StatelessWidget {
   const _ProductCard({
     required this.product,
     required this.onTap,
-    required this.onAdd,
+    required this.onAddToCart,
     this.isGrid = false,
+    this.isPurchased = false,
   });
 
   final Product product;
   final VoidCallback onTap;
-  final VoidCallback onAdd;
+  final Future<void> Function() onAddToCart;
   final bool isGrid;
+  final bool isPurchased;
 
   @override
   Widget build(BuildContext context) {
@@ -1093,6 +1450,38 @@ class _ProductCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (isPurchased) ...[
+                      const SizedBox(height: 3),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.star,
+                              size: 11,
+                              color: colors.onPrimaryContainer,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Comprado · Calificar',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: colors.onPrimaryContainer,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       product.description ?? 'Sin descripción',
@@ -1107,41 +1496,37 @@ class _ProductCard extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            '\$${product.price.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: colors.primary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '\$${product.price.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: colors.primary,
+                                ),
+                              ),
+                              Text(
+                                stockLabel,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: hasStock
+                                      ? colors.onTertiaryContainer
+                                      : colors.onErrorContainer,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        Text(
-                          stockLabel,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: hasStock
-                                ? colors.onTertiaryContainer
-                                : colors.onErrorContainer,
-                          ),
+                        IconButton.filledTonal(
+                          tooltip: 'Agregar al carrito',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: hasStock ? onAddToCart : null,
+                          icon: const Icon(Icons.add_shopping_cart, size: 19),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 34,
-                      child: FilledButton.tonalIcon(
-                        onPressed: hasStock ? onAdd : null,
-                        icon: const Icon(Icons.add_shopping_cart, size: 16),
-                        label: const Text(
-                          'Agregar',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -1179,6 +1564,38 @@ class _ProductCard extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (isPurchased) ...[
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primaryContainer,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.star,
+                                    size: 13,
+                                    color: colors.onPrimaryContainer,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Comprado · Calificar',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: colors.onPrimaryContainer,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Text(
                             product.description ?? 'Sin descripción',
@@ -1189,7 +1606,6 @@ class _ProductCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 6),
                           Row(
                             children: [
                               Text(
@@ -1233,9 +1649,10 @@ class _ProductCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    const SizedBox(width: 4),
                     IconButton.filledTonal(
                       tooltip: 'Agregar al carrito',
-                      onPressed: hasStock ? onAdd : null,
+                      onPressed: hasStock ? onAddToCart : null,
                       icon: const Icon(Icons.add_shopping_cart),
                     ),
                   ],

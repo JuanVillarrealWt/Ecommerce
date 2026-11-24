@@ -7,6 +7,10 @@ class Cart {
 
   factory Cart.empty() => Cart._(const {});
 
+  factory Cart.fromItems(Iterable<CartItem> items) => Cart._(
+    Map.unmodifiable({for (final item in items) item.product.id: item}),
+  );
+
   final Map<int, CartItem> _items;
 
   List<CartItem> get items => List.unmodifiable(_items.values);
@@ -26,12 +30,32 @@ class Cart {
     final current = updated[product.id];
     final nextQuantity = (current?.quantity ?? 0) + quantity;
     if (product.stockTracked && nextQuantity > product.stock) {
-      throw ArgumentError.value(nextQuantity, 'quantity', 'La cantidad supera el stock disponible (${product.stock}).');
+      throw ArgumentError.value(
+        nextQuantity,
+        'quantity',
+        'La cantidad supera el stock disponible (${product.stock}).',
+      );
     }
-    updated[product.id] = CartItem(
-      product: product,
-      quantity: nextQuantity,
-    );
+    updated[product.id] = CartItem(product: product, quantity: nextQuantity);
+    return Cart._(Map.unmodifiable(updated));
+  }
+
+  /// Combines another cart by product ID while keeping each product once.
+  /// Stock is revalidated by checkout, since the snapshots in either cart can
+  /// be stale by the time an account is signed in.
+  Cart mergedWith(Cart other) {
+    final updated = Map<int, CartItem>.of(_items);
+    for (final item in other.items) {
+      final current = updated[item.product.id];
+      if (current == null) {
+        updated[item.product.id] = item;
+        continue;
+      }
+      updated[item.product.id] = CartItem(
+        product: item.product,
+        quantity: (current.quantity + item.quantity).clamp(1, 9999).toInt(),
+      );
+    }
     return Cart._(Map.unmodifiable(updated));
   }
 
@@ -48,7 +72,11 @@ class Cart {
       return this;
     }
     if (current.product.stockTracked && quantity > current.product.stock) {
-      throw ArgumentError.value(quantity, 'quantity', 'La cantidad supera el stock disponible (${current.product.stock}).');
+      throw ArgumentError.value(
+        quantity,
+        'quantity',
+        'La cantidad supera el stock disponible (${current.product.stock}).',
+      );
     }
     final updated = Map<int, CartItem>.of(_items)
       ..[productId] = current.withQuantity(quantity);

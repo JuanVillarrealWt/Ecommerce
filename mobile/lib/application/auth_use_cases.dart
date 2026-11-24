@@ -4,8 +4,13 @@ import 'auth_repository.dart';
 class RegisterCustomerUseCase {
   const RegisterCustomerUseCase(this._repository);
   final AuthRepository _repository;
-  Future<Customer> call(String name, String email, String password, String province, String phone) =>
-      _repository.register(name, email, password, province, phone);
+  Future<Customer> call(
+    String name,
+    String email,
+    String password,
+    String province,
+    String phone,
+  ) => _repository.register(name, email, password, province, phone);
 }
 
 class LoginCustomerUseCase {
@@ -13,6 +18,13 @@ class LoginCustomerUseCase {
   final AuthRepository _repository;
   Future<Customer> call(String email, String password) =>
       _repository.login(email, password);
+}
+
+class UpdateCustomerProfileUseCase {
+  const UpdateCustomerProfileUseCase(this._repository);
+  final AuthRepository _repository;
+  Future<Customer> call(String name, String province, String phone) =>
+      _repository.updateProfile(name, province, phone);
 }
 
 class LogoutCustomerUseCase {
@@ -27,4 +39,3 @@ class GetCurrentCustomerUseCase {
   Customer? call() => _repository.getCurrentCustomer();
   bool get isAuthenticated => _repository.isAuthenticated;
 }
-

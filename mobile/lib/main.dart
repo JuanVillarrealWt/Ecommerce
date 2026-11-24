@@ -1,21 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 import 'application/auth_use_cases.dart';
 import 'application/cart_use_cases.dart';
+import 'application/checkout_use_cases.dart';
 import 'application/get_categories.dart';
 import 'application/get_products.dart';
 import 'application/order_use_cases.dart';
 import 'infrastructure/api_auth_repository.dart';
+import 'infrastructure/api_checkout_repository.dart';
 import 'infrastructure/api_cart_repository.dart';
 import 'infrastructure/api_config.dart';
 import 'infrastructure/api_category_repository.dart';
 import 'infrastructure/api_order_repository.dart';
+import 'infrastructure/api_customer_features_repository.dart';
 import 'infrastructure/api_product_repository.dart';
 import 'infrastructure/local_cart_repository.dart';
+import 'infrastructure/stripe_checkout_config.dart';
 import 'presentation/main_scaffold.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (stripePublishableKey.isNotEmpty) {
+    Stripe.publishableKey = stripePublishableKey;
+    Stripe.urlScheme = 'entrecumbres';
+    Stripe.setReturnUrlSchemeOnAndroid = true;
+    await Stripe.instance.applySettings();
+  }
 
   final baseUrl = apiBaseUrl;
 
@@ -23,7 +35,13 @@ void main() {
   final productRepo = ApiProductRepository(baseUrl: baseUrl);
   final categoryRepo = ApiCategoryRepository(baseUrl: baseUrl);
   final authRepo = ApiAuthRepository(baseUrl: baseUrl);
+  await authRepo.restoreSession();
+  final customerFeaturesRepo = ApiCustomerFeaturesRepository(
+    authRepo,
+    baseUrl: baseUrl,
+  );
   final orderRepo = ApiOrderRepository(authRepo, baseUrl: baseUrl);
+  final checkoutRepo = ApiCheckoutRepository(authRepo, baseUrl: baseUrl);
   final localCartRepo = LocalCartRepository();
   final cartRepo = ApiCartRepository(local: localCartRepo, auth: authRepo);
 
@@ -40,12 +58,15 @@ void main() {
 
   final registerCustomer = RegisterCustomerUseCase(authRepo);
   final loginCustomer = LoginCustomerUseCase(authRepo);
+  final updateCustomerProfile = UpdateCustomerProfileUseCase(authRepo);
   final logoutCustomer = LogoutCustomerUseCase(authRepo);
   final getCurrentCustomer = GetCurrentCustomerUseCase(authRepo);
 
-  final createOrder = CreateOrderUseCase(orderRepo);
+  final startCheckout = StartCheckoutUseCase(checkoutRepo);
+  final getCheckoutStatus = GetCheckoutStatusUseCase(checkoutRepo);
   final getCustomerOrders = GetCustomerOrdersUseCase(orderRepo);
   final getOrderDetail = GetOrderDetailUseCase(orderRepo);
+  final markOrderReceived = MarkOrderReceivedUseCase(orderRepo);
 
   // 3. Capa de Presentación
   runApp(
@@ -60,12 +81,16 @@ void main() {
       clearCart: clearCart,
       registerCustomer: registerCustomer,
       loginCustomer: loginCustomer,
+      updateCustomerProfile: updateCustomerProfile,
       logoutCustomer: logoutCustomer,
       getCurrentCustomer: getCurrentCustomer,
-      createOrder: createOrder,
+      startCheckout: startCheckout,
+      getCheckoutStatus: getCheckoutStatus,
       getCustomerOrders: getCustomerOrders,
       getOrderDetail: getOrderDetail,
+      markOrderReceived: markOrderReceived,
       syncAccountCart: cartRepo.syncFromAccount,
+      customerFeaturesRepository: customerFeaturesRepo,
     ),
   );
 }
@@ -82,12 +107,16 @@ class ECommerceApp extends StatefulWidget {
     required this.clearCart,
     required this.registerCustomer,
     required this.loginCustomer,
+    required this.updateCustomerProfile,
     required this.logoutCustomer,
     required this.getCurrentCustomer,
-    required this.createOrder,
+    required this.startCheckout,
+    required this.getCheckoutStatus,
     required this.getCustomerOrders,
     required this.getOrderDetail,
+    required this.markOrderReceived,
     required this.syncAccountCart,
+    required this.customerFeaturesRepository,
     super.key,
   });
 
@@ -101,12 +130,16 @@ class ECommerceApp extends StatefulWidget {
   final ClearCart clearCart;
   final RegisterCustomerUseCase registerCustomer;
   final LoginCustomerUseCase loginCustomer;
+  final UpdateCustomerProfileUseCase updateCustomerProfile;
   final LogoutCustomerUseCase logoutCustomer;
   final GetCurrentCustomerUseCase getCurrentCustomer;
-  final CreateOrderUseCase createOrder;
+  final StartCheckoutUseCase startCheckout;
+  final GetCheckoutStatusUseCase getCheckoutStatus;
   final GetCustomerOrdersUseCase getCustomerOrders;
   final GetOrderDetailUseCase getOrderDetail;
+  final MarkOrderReceivedUseCase markOrderReceived;
   final Future<void> Function() syncAccountCart;
+  final ApiCustomerFeaturesRepository customerFeaturesRepository;
 
   @override
   State<ECommerceApp> createState() => _ECommerceAppState();
@@ -143,20 +176,25 @@ class _ECommerceAppState extends State<ECommerceApp> {
       ),
       home: MainScaffold(
         getProducts: widget.getProducts,
+        getProductDetail: widget.getProductDetail,
         getCategories: widget.getCategories,
         getCart: widget.getCart,
         addProductToCart: widget.addProductToCart,
         setCartQuantity: widget.setCartQuantity,
         removeProductFromCart: widget.removeProductFromCart,
         clearCart: widget.clearCart,
-        createOrder: widget.createOrder,
+        startCheckout: widget.startCheckout,
+        getCheckoutStatus: widget.getCheckoutStatus,
         getCustomerOrders: widget.getCustomerOrders,
         getOrderDetail: widget.getOrderDetail,
+        markOrderReceived: widget.markOrderReceived,
         loginCustomer: widget.loginCustomer,
+        updateCustomerProfile: widget.updateCustomerProfile,
         registerCustomer: widget.registerCustomer,
         logoutCustomer: widget.logoutCustomer,
         getCurrentCustomer: widget.getCurrentCustomer,
         syncAccountCart: widget.syncAccountCart,
+        customerFeaturesRepository: widget.customerFeaturesRepository,
         isDarkMode: _themeMode == ThemeMode.dark,
         onToggleTheme: () => setState(() {
           _themeMode = _themeMode == ThemeMode.dark

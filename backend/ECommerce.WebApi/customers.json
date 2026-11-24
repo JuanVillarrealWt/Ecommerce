@@ -6,6 +6,21 @@
     "PasswordHash": "bwoJ58ndfxOWXYk12Dl\u002BEgunc2abYc1UAEwQi986s9g=",
     "Salt": "gNeZU1rzfr9MrtpL/LAI3A==",
     "PartnerId": 9,
+    "StripeCustomerId": null,
+    "Province": "",
+    "Phone": "",
     "CreatedAt": "2026-11-17T22:58:25.3161968Z"
+  },
+  {
+    "Id": 2,
+    "Name": "Juan Fernando Villarreal",
+    "Email": "juanfernandov111@gmail.com",
+    "PasswordHash": "8UONyIuovKeyh3QZTFago14bokqm8u4hjN3yOkI2y7k=",
+    "Salt": "6lCGJA/dXt4T6IcPlBmIkQ==",
+    "PartnerId": 10,
+    "StripeCustomerId": "cus_Vg9oVTBsy0DWGT",
+    "Province": "Tungurahua",
+    "Phone": "0995691771",
+    "CreatedAt": "2026-11-21T19:29:06.48492Z"
   }
 ]

@@ -89,6 +89,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.8"
+  cupertino_ui:
+    dependency: transitive
+    description:
+      name: cupertino_ui
+      sha256: c3eaf7f5bdfee36deb0b14a4cbf7602f1b6b8d8b8576b81f38fc08c25881c94c
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.7"
   fake_async:
     dependency: transitive
     description:
@@ -190,6 +198,27 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
+  flutter_localizations:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
+  flutter_stripe:
+    dependency: "direct main"
+    description:
+      name: flutter_stripe
+      sha256: "71a428ea5031995478a6ca6a5168dd09fafbf1a359b7de1e6c9ae281404ce73f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "15.0.0"
+  flutter_stripe_web:
+    dependency: "direct main"
+    description:
+      name: flutter_stripe_web
+      sha256: ea0183126075079936c1a4b98867b30ff0b5ef6333c6c3f2bb76405ad4f9e983
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.0.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -200,6 +229,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  freezed_annotation:
+    dependency: transitive
+    description:
+      name: freezed_annotation
+      sha256: "7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.0"
   http:
     dependency: transitive
     description:
@@ -224,6 +261,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.13.1"
+  intl:
+    dependency: transitive
+    description:
+      name: intl
+      sha256: "1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.20.3"
   jni:
     dependency: transitive
     description:
@@ -240,6 +285,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
+  json_annotation:
+    dependency: transitive
+    description:
+      name: json_annotation
+      sha256: "2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.12.0"
   leak_tracker:
     dependency: transitive
     description:
@@ -288,6 +341,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
+  material_ui:
+    dependency: transitive
+    description:
+      name: material_ui
+      sha256: a6b19012df437a356cbc01f8ea22a105e07194c47c9a6009da0032a0ce35c4ab
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.11.1"
   meta:
     dependency: transitive
     description:
@@ -501,6 +562,38 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  stripe_android:
+    dependency: transitive
+    description:
+      name: stripe_android
+      sha256: "45baa857b454cd72665ef380ef657eb586e561afc4799e0d07fd538c601ce663"
+      url: "https://pub.dev"
+    source: hosted
+    version: "15.0.0"
+  stripe_ios:
+    dependency: transitive
+    description:
+      name: stripe_ios
+      sha256: f641c70fc9cf0446a9208fd42760895a89449cee1e124babe6d1c1aedb035787
+      url: "https://pub.dev"
+    source: hosted
+    version: "15.0.0"
+  stripe_js:
+    dependency: transitive
+    description:
+      name: stripe_js
+      sha256: "61fdaee178c73955c555ae816b7b0cc77f47df5fc9a839f78191cdc09a94866c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.0.0"
+  stripe_platform_interface:
+    dependency: transitive
+    description:
+      name: stripe_platform_interface
+      sha256: b04315c68a9947e8de66e52ffa430951f062b7f5eae02e1cf09510a7702d3df9
+      url: "https://pub.dev"
+    source: hosted
+    version: "15.0.0"
   term_glyph:
     dependency: transitive
     description:

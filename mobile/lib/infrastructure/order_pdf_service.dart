@@ -24,7 +24,7 @@ class OrderPdfService {
             pw.Container(height: 1, color: _accent),
             pw.SizedBox(height: 9),
             pw.Text(
-              'Gracias por tu compra en E-Commerce',
+              'Gracias por tu compra en Entre Cumbres',
               style: pw.TextStyle(color: _ink, fontSize: 10),
             ),
             pw.SizedBox(height: 3),
@@ -57,7 +57,7 @@ class OrderPdfService {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      'E-COMMERCE',
+                      'ENTRE CUMBRES',
                       style: pw.TextStyle(
                         color: _ink,
                         fontSize: 22,
@@ -106,7 +106,7 @@ class OrderPdfService {
               pw.Expanded(
                 child: _infoCard('DETALLES DEL PEDIDO', [
                   'Referencia: ${order.name}',
-                  'Estado: ${_status(order.state)}',
+                  'Estado: ${order.received ? 'Recibido' : _status(order.state)}',
                 ]),
               ),
             ],
@@ -189,22 +189,28 @@ class OrderPdfService {
                 borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
               ),
               child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    'TOTAL DEL PEDIDO',
-                    style: pw.TextStyle(
-                      color: _ink,
-                      fontSize: 11,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.Text(
-                    _money(order.amountTotal),
-                    style: pw.TextStyle(
-                      color: _ink,
-                      fontSize: 15,
-                      fontWeight: pw.FontWeight.bold,
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: [
+                        _summaryLine(
+                          'Subtotal sin impuestos',
+                          _money(order.amountUntaxed),
+                        ),
+                        pw.SizedBox(height: 6),
+                        _summaryLine(
+                          'IVA / impuestos',
+                          _money(order.amountTax),
+                        ),
+                        pw.Divider(color: _line),
+                        _summaryLine(
+                          'TOTAL DEL PEDIDO',
+                          _money(order.amountTotal),
+                          bold: true,
+                          large: true,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -254,13 +260,40 @@ class OrderPdfService {
         ),
       );
 
+  static pw.Widget _summaryLine(
+    String label,
+    String value, {
+    bool bold = false,
+    bool large = false,
+  }) => pw.Row(
+    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+    children: [
+      pw.Text(
+        label,
+        style: pw.TextStyle(
+          color: _ink,
+          fontSize: large ? 11 : 9,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+      pw.Text(
+        value,
+        style: pw.TextStyle(
+          color: _ink,
+          fontSize: large ? 13 : 9,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        ),
+      ),
+    ],
+  );
+
   static String _formatDate(DateTime value) {
     final local = value.toLocal();
     return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
   static String _status(String state) => switch (state) {
-    'sale' => 'Confirmado',
+    'sale' || 'done' => 'Confirmado',
     'cancel' => 'Cancelado',
     _ => 'Cotización',
   };

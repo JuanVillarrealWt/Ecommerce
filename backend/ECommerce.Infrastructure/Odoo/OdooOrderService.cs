@@ -18,6 +18,17 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         IReadOnlyList<(int ProductId, int Quantity, decimal UnitPrice)> items,
         CancellationToken cancellationToken = default)
     {
+        // Keep the legacy interface method from bypassing Stripe: creation only stages a quotation.
+        return await CreateDraftOrderAsync(partnerId, clientOrderRef, items, null, cancellationToken);
+    }
+
+    public async Task<Order> CreateDraftOrderAsync(
+        int partnerId,
+        string clientOrderRef,
+        IReadOnlyList<(int ProductId, int Quantity, decimal UnitPrice)> items,
+        OrderDeliveryAddress? deliveryAddress = null,
+        CancellationToken cancellationToken = default)
+    {
         ValidateCredentials();
 
         // 1. Preparar líneas según la especificación JSON-2: comando [0, 0, { product_id, product_uom_qty, price_unit }]
@@ -34,17 +45,20 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         }).ToArray();
 
         // 2. Crear cotización con /json/2/sale.order/create
+        var orderValues = new Dictionary<string, object>
+        {
+            ["partner_id"] = partnerId,
+            ["client_order_ref"] = clientOrderRef,
+            ["order_line"] = orderLines
+        };
+        if (deliveryAddress is not null)
+        {
+            orderValues["note"] = FormatDeliveryAddress(deliveryAddress);
+        }
+
         using var createRequest = CreateOdooRequest(HttpMethod.Post, "/json/2/sale.order/create", new
         {
-            vals_list = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["partner_id"] = partnerId,
-                    ["client_order_ref"] = clientOrderRef,
-                    ["order_line"] = orderLines
-                }
-            }
+            vals_list = new[] { orderValues }
         });
 
         using var createResponse = await http.SendAsync(createRequest, cancellationToken);
@@ -60,7 +74,32 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
 
         var orderId = createDoc.RootElement[0].GetInt32();
 
-        // 3. Confirmar cotización a Orden de Venta con /json/2/sale.order/action_confirm
+        // Return the amount and currency calculated by Odoo, including configured taxes.
+        var order = await GetOrderByIdAsync(orderId, cancellationToken);
+        return order ?? throw new InvalidOperationException("Odoo creó la cotización pero no se pudo recuperar su total.");
+    }
+
+    private static string FormatDeliveryAddress(OrderDeliveryAddress address) =>
+        $"Dirección de entrega ({address.Label})\n" +
+        $"Recibe: {address.Recipient}\n" +
+        $"Teléfono: {address.Phone}\n" +
+        $"{address.Street}\n" +
+        $"{address.City}, {address.Province} {address.PostalCode}";
+
+    public async Task<Order> ConfirmOrderAsync(int orderId, CancellationToken cancellationToken = default)
+    {
+        ValidateCredentials();
+        var existing = await GetOrderByIdAsync(orderId, cancellationToken)
+            ?? throw new InvalidOperationException("No se encontró la cotización de Odoo para confirmar.");
+        if (existing.State == "sale")
+        {
+            await OdooProductCatalog.InvalidateCacheAsync(cancellationToken);
+            return existing;
+        }
+        if (existing.State != "draft" && existing.State != "sent")
+            throw new InvalidOperationException($"La cotización {existing.Name} no se puede confirmar desde el estado '{existing.State}'.");
+
+        // Confirm the quotation only after the payment provider reports success.
         using var confirmRequest = CreateOdooRequest(HttpMethod.Post, "/json/2/sale.order/action_confirm", new
         {
             ids = new[] { orderId },
@@ -74,9 +113,10 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
             throw new InvalidOperationException($"Error de Odoo al confirmar pedido ({confirmResponse.StatusCode}): {errContent}");
         }
 
-        var orderItems = items.Select(i => new OrderItem(i.ProductId, $"Producto {i.ProductId}", i.Quantity, i.UnitPrice)).ToList();
-        // La orden ya fue creada y confirmada; no esperar otra consulta de lectura a Odoo.
-        return new Order(orderId, $"SO{orderId:D5}", partnerId, "Cliente", "sale", items.Sum(i => i.Quantity * i.UnitPrice), DateTime.UtcNow, orderItems);
+        var confirmedOrder = await GetOrderByIdAsync(orderId, cancellationToken)
+            ?? throw new InvalidOperationException("Odoo confirmó el pedido pero no se pudo recuperar su estado.");
+        await OdooProductCatalog.InvalidateCacheAsync(cancellationToken);
+        return confirmedOrder;
     }
 
     public async Task<IReadOnlyList<Order>> GetCustomerOrdersAsync(int partnerId, CancellationToken cancellationToken = default)
@@ -87,9 +127,10 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         {
             domain = new object[]
             {
-                new object[] { "partner_id", "=", partnerId }
+                new object[] { "partner_id", "=", partnerId },
+                new object[] { "state", "in", new[] { "sale", "done" } }
             },
-            fields = new[] { "id", "name", "partner_id", "state", "amount_total", "date_order", "order_line" },
+            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id" },
             limit = 50
         });
 
@@ -119,7 +160,7 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
             {
                 new object[] { "id", "=", orderId }
             },
-            fields = new[] { "id", "name", "partner_id", "state", "amount_total", "date_order", "order_line" },
+            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id" },
             limit = 1
         });
 
@@ -169,13 +210,17 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         foreach (var item in doc.RootElement.EnumerateArray())
         {
             var pId = 0;
-            var pName = item.TryGetProperty("name", out var n) ? n.GetString() ?? "Producto" : "Producto";
+            var pName = item.TryGetProperty("name", out var n)
+                ? n.GetString() ?? string.Empty
+                : string.Empty;
 
             if (item.TryGetProperty("product_id", out var pi) && pi.ValueKind == JsonValueKind.Array && pi.GetArrayLength() > 0)
             {
                 pi[0].TryGetInt32(out pId);
-                if (pi.GetArrayLength() > 1) pName = pi[1].GetString() ?? pName;
+                if (string.IsNullOrWhiteSpace(pName) && pi.GetArrayLength() > 1)
+                    pName = pi[1].GetString() ?? pName;
             }
+            if (string.IsNullOrWhiteSpace(pName)) pName = "Producto";
 
             var qty = item.TryGetProperty("product_uom_qty", out var q) && q.TryGetDecimal(out var qVal) ? (int)qVal : 1;
             var price = item.TryGetProperty("price_unit", out var p) && p.TryGetDecimal(out var pVal) ? pVal : 0m;
@@ -201,12 +246,18 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
 
         var state = row.TryGetProperty("state", out var s) ? s.GetString() ?? "draft" : "draft";
         var amountTotal = row.TryGetProperty("amount_total", out var a) && a.TryGetDecimal(out var av) ? av : 0m;
+        var amountUntaxed = row.TryGetProperty("amount_untaxed", out var untaxed) && untaxed.TryGetDecimal(out var untaxedValue) ? untaxedValue : amountTotal;
+        var amountTax = row.TryGetProperty("amount_tax", out var tax) && tax.TryGetDecimal(out var taxValue) ? taxValue : amountTotal - amountUntaxed;
+        var currencyCode = "USD";
+        if (row.TryGetProperty("currency_id", out var currency) &&
+            currency.ValueKind == JsonValueKind.Array && currency.GetArrayLength() > 1)
+            currencyCode = currency[1].GetString() ?? currencyCode;
 
         var createdAt = DateTime.UtcNow;
         if (row.TryGetProperty("date_order", out var d) && d.TryGetDateTime(out var dt))
             createdAt = dt;
 
-        return new Order(id, name, partnerId, partnerName, state, amountTotal, createdAt, items);
+        return new Order(id, name, partnerId, partnerName, state, amountTotal, createdAt, items, currencyCode, amountUntaxed, amountTax);
     }
 
     private static readonly JsonSerializerOptions OdooJsonOptions = new()

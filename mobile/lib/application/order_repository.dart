@@ -5,5 +5,5 @@ abstract interface class OrderRepository {
   Future<OrderModel> createOrder(List<CartItem> items);
   Future<List<OrderModel>> getCustomerOrders();
   Future<OrderModel?> getOrderDetail(int orderId);
+  Future<void> markOrderReceived(int orderId);
 }
-

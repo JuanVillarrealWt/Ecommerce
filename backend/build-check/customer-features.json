@@ -1,0 +1,190 @@
+{
+  "10": {
+    "FavoriteProductIds": [
+      18
+    ],
+    "Wishlists": [],
+    "Addresses": [
+      {
+        "Id": "296dbcd0-f9d2-48a3-b9d0-37d5041410c5",
+        "Label": "Casajsja",
+        "Recipient": "Juan Villarreal",
+        "Street": "Mois\u00E9s Buena\u00F1o",
+        "City": "Ambato",
+        "Province": "Tungurahua",
+        "PostalCode": "985468",
+        "Phone": "0995691771",
+        "IsDefault": true,
+        "OdooPartnerId": null
+      },
+      {
+        "Id": "ce94557a-fa71-42de-ad77-4cd9c1b8dbf5",
+        "Label": "Haola",
+        "Recipient": "Hahajajs",
+        "Street": "Jaja",
+        "City": "Espejo",
+        "Province": "Carchi",
+        "PostalCode": "676464",
+        "Phone": "0976461616",
+        "IsDefault": false,
+        "OdooPartnerId": null
+      }
+    ],
+    "Reviews": [
+      {
+        "Id": "e0661325-c299-4708-a4b9-265b85f7edfe",
+        "PartnerId": 10,
+        "CustomerName": "Juan Villarreal",
+        "ProductId": 3,
+        "OrderId": 37,
+        "Rating": 4,
+        "Comment": "me gust\u00F3 un poco",
+        "CreatedAt": "2026-11-23T20:39:29.6408708Z"
+      }
+    ],
+    "Notifications": [
+      {
+        "Id": "e1dabc69-2b4f-4b03-837f-8c5a703a34ff",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00049 fue procesado correctamente.",
+        "OrderId": 49,
+        "CreatedAt": "2026-11-23T21:25:57.5312997Z",
+        "IsRead": false
+      },
+      {
+        "Id": "055963f7-747a-46e0-b1b0-6884305285de",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00048 fue procesado correctamente.",
+        "OrderId": 48,
+        "CreatedAt": "2026-11-23T20:40:09.7350852Z",
+        "IsRead": false
+      },
+      {
+        "Id": "2698eac7-52df-448a-9974-6c651afbfb86",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00047 fue procesado correctamente.",
+        "OrderId": 47,
+        "CreatedAt": "2026-11-23T18:58:31.4062656Z",
+        "IsRead": false
+      },
+      {
+        "Id": "233e9ae9-1bda-427a-8758-3bb8e8bd7db8",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00046 fue procesado correctamente.",
+        "OrderId": 46,
+        "CreatedAt": "2026-11-23T18:43:22.4581347Z",
+        "IsRead": true
+      },
+      {
+        "Id": "44235bf4-90c2-4000-a1f3-da44c4a79ba5",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00045 fue procesado correctamente.",
+        "OrderId": 45,
+        "CreatedAt": "2026-11-23T17:40:53.0671273Z",
+        "IsRead": false
+      },
+      {
+        "Id": "5dfcf258-3fb2-46e1-8088-d65328ef9763",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00044 fue procesado correctamente.",
+        "OrderId": 44,
+        "CreatedAt": "2026-11-23T16:43:01.3556592Z",
+        "IsRead": false
+      },
+      {
+        "Id": "b9a59ed8-2ae1-411e-b7dc-609a0037fad1",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00041 fue procesado correctamente.",
+        "OrderId": 41,
+        "CreatedAt": "2026-11-23T16:06:37.6910884Z",
+        "IsRead": false
+      },
+      {
+        "Id": "10d25ca6-de5a-4e79-9813-de5e41731b6e",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00040 fue procesado correctamente.",
+        "OrderId": 40,
+        "CreatedAt": "2026-11-23T15:09:17.6398172Z",
+        "IsRead": false
+      },
+      {
+        "Id": "a4a339a2-e1d7-463c-b514-c6efa6ede46d",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00039 fue procesado correctamente.",
+        "OrderId": 39,
+        "CreatedAt": "2026-11-23T15:03:46.7161118Z",
+        "IsRead": true
+      },
+      {
+        "Id": "9cb4112a-6ff6-4b47-86e2-6658f4f67623",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00038 fue procesado correctamente.",
+        "OrderId": 38,
+        "CreatedAt": "2026-11-23T15:03:02.7671653Z",
+        "IsRead": true
+      },
+      {
+        "Id": "b31388c6-e3b8-41c8-b8f6-aa5c49fa3fdf",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00037 fue procesado correctamente.",
+        "OrderId": 37,
+        "CreatedAt": "2026-11-23T14:37:56.0567777Z",
+        "IsRead": true
+      },
+      {
+        "Id": "0a5499bc-f68a-4077-840b-70458ee77daf",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00036 fue procesado correctamente.",
+        "OrderId": 36,
+        "CreatedAt": "2026-11-23T13:46:43.843491Z",
+        "IsRead": false
+      },
+      {
+        "Id": "fef75c0b-cb15-4bca-82d6-5c3ae0535c2b",
+        "Type": "payment",
+        "Title": "Pago confirmado",
+        "Message": "El pago de S00035 fue procesado correctamente.",
+        "OrderId": 35,
+        "CreatedAt": "2026-11-23T12:55:23.0916829Z",
+        "IsRead": true
+      }
+    ],
+    "ReceivedOrderIds": [
+      1,
+      47,
+      48,
+      49
+    ],
+    "OrderStates": {
+      "29": "sale",
+      "13": "sale",
+      "2": "sale",
+      "1": "sale",
+      "35": "sale",
+      "36": "sale",
+      "37": "sale",
+      "38": "sale",
+      "39": "sale",
+      "40": "sale",
+      "41": "sale",
+      "44": "sale",
+      "45": "sale",
+      "46": "sale",
+      "47": "sale",
+      "48": "sale",
+      "49": "sale"
+    }
+  }
+}

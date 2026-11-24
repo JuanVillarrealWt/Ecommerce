@@ -1,23 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../application/auth_use_cases.dart';
+import '../application/cart_use_cases.dart';
+import '../application/customer_features_repository.dart';
+import '../application/get_products.dart';
+import 'customer_features_page.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({
     required this.loginCustomer,
+    required this.updateCustomerProfile,
     required this.registerCustomer,
     required this.logoutCustomer,
     required this.getCurrentCustomer,
+    required this.getProductDetail,
+    required this.getCart,
+    required this.addProductToCart,
+    required this.onCartChanged,
+    this.customerFeaturesRepository,
     this.onAuthSuccess,
     super.key,
   });
 
   final LoginCustomerUseCase loginCustomer;
+  final UpdateCustomerProfileUseCase updateCustomerProfile;
   final RegisterCustomerUseCase registerCustomer;
   final LogoutCustomerUseCase logoutCustomer;
   final GetCurrentCustomerUseCase getCurrentCustomer;
-  final VoidCallback? onAuthSuccess;
+  final GetProductDetail getProductDetail;
+  final GetCart getCart;
+  final AddProductToCart addProductToCart;
+  final VoidCallback onCartChanged;
+  final CustomerFeaturesRepository? customerFeaturesRepository;
+  final Future<void> Function()? onAuthSuccess;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -25,11 +42,30 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   static const _ecuadorProvinces = <String>[
-    'Azuay', 'Bolívar', 'Cañar', 'Carchi', 'Chimborazo', 'Cotopaxi',
-    'El Oro', 'Esmeraldas', 'Galápagos', 'Guayas', 'Imbabura', 'Loja',
-    'Los Ríos', 'Manabí', 'Morona Santiago', 'Napo', 'Orellana', 'Pastaza',
-    'Pichincha', 'Santa Elena', 'Santo Domingo de los Tsáchilas',
-    'Sucumbíos', 'Tungurahua', 'Zamora Chinchipe',
+    'Azuay',
+    'Bolívar',
+    'Cañar',
+    'Carchi',
+    'Chimborazo',
+    'Cotopaxi',
+    'El Oro',
+    'Esmeraldas',
+    'Galápagos',
+    'Guayas',
+    'Imbabura',
+    'Loja',
+    'Los Ríos',
+    'Manabí',
+    'Morona Santiago',
+    'Napo',
+    'Orellana',
+    'Pastaza',
+    'Pichincha',
+    'Santa Elena',
+    'Santo Domingo de los Tsáchilas',
+    'Sucumbíos',
+    'Tungurahua',
+    'Zamora Chinchipe',
   ];
 
   int _activeTab = 0;
@@ -71,6 +107,30 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
+  Future<void> _editProfile(
+    String currentName,
+    String currentProvince,
+    String currentPhone,
+  ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ProfileEditDialog(
+        currentName: currentName,
+        currentProvince: currentProvince,
+        currentPhone: currentPhone,
+        provinces: _ecuadorProvinces,
+        onSave: widget.updateCustomerProfile,
+      ),
+    );
+    if (result == true && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Perfil actualizado.')));
+    }
+  }
+
   Future<void> _handleLogin() async {
     final email = _loginEmailController.text.trim();
     final password = _loginPasswordController.text;
@@ -102,7 +162,8 @@ class _AuthPageState extends State<AuthPage> {
     try {
       await widget.loginCustomer(email, password);
       if (mounted) {
-        widget.onAuthSuccess?.call();
+        await widget.onAuthSuccess?.call();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Sesión iniciada con éxito.')),
         );
@@ -171,7 +232,10 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     if (!RegExp(r'^09\d{8}$').hasMatch(phone)) {
-      setState(() => _errorMessage = 'El celular debe tener 10 dígitos y comenzar con 09.');
+      setState(
+        () => _errorMessage =
+            'El celular debe tener 10 dígitos y comenzar con 09.',
+      );
       return;
     }
 
@@ -182,8 +246,14 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       await widget.registerCustomer(name, email, password, province, phone);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_first_name', firstName);
+        await prefs.setString('auth_last_name', lastName);
+      } catch (_) {}
       if (mounted) {
-        widget.onAuthSuccess?.call();
+        await widget.onAuthSuccess?.call();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Cuenta registrada y sesión iniciada con éxito.'),
@@ -200,6 +270,28 @@ class _AuthPageState extends State<AuthPage> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _handleLogout() async {
+    await widget.logoutCustomer();
+    if (!mounted) return;
+
+    _loginEmailController.clear();
+    _loginPasswordController.clear();
+    _regFirstNameController.clear();
+    _regLastNameController.clear();
+    _regPhoneController.clear();
+    _regEmailController.clear();
+    _regPasswordController.clear();
+    _regConfirmPasswordController.clear();
+    setState(() {
+      _activeTab = 0;
+      _selectedProvince = null;
+      _errorMessage = null;
+      _obscureLoginPassword = true;
+      _obscureRegisterPassword = true;
+      _obscureConfirmPassword = true;
+    });
   }
 
   bool _hasRepeatedSpaces(String value) => value.contains('  ');
@@ -299,10 +391,12 @@ class _AuthPageState extends State<AuthPage> {
       );
 
   TextInputFormatter _noRepeatedSpacesFormatter() =>
-      TextInputFormatter.withFunction(
-        (oldValue, newValue) =>
-            newValue.text.contains('  ') ? oldValue : newValue,
-      );
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        if (newValue.text.contains('  ') || newValue.text.startsWith(' ')) {
+          return oldValue;
+        }
+        return newValue;
+      });
 
   List<TextInputFormatter> _limitedTextFormatters({bool name = false}) => [
     if (name) ...[
@@ -321,65 +415,109 @@ class _AuthPageState extends State<AuthPage> {
     if (customer != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Mi Perfil')),
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 46,
-                backgroundColor: colors.primary,
-                child: Icon(Icons.person, size: 54, color: Colors.white),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                customer.name,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              Text(
-                customer.email,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 46,
+                      backgroundColor: colors.primary,
+                      child: Icon(Icons.person, size: 54, color: Colors.white),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      customer.name,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    Text(
+                      customer.email,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.secondaryContainer,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: colors.outlineVariant),
+                      ),
+                      child: Text(
+                        'Contacto Odoo: Partner #${customer.partnerId}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: colors.onSecondaryContainer,
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 40),
+                    ListTile(
+                      leading: const Icon(Icons.manage_accounts_outlined),
+                      title: const Text('Editar mi perfil'),
+                      subtitle: const Text(
+                        'Actualiza tu nombre, provincia y teléfono',
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _editProfile(
+                        customer.name,
+                        customer.province,
+                        customer.phone,
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    if (widget.customerFeaturesRepository != null) ...[
+                      ListTile(
+                        leading: const Icon(Icons.favorite_border),
+                        title: const Text('Favoritos y direcciones'),
+                        subtitle: const Text(
+                          'Guarda tus preferencias en tu cuenta',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CustomerFeaturesPage(
+                                repository: widget.customerFeaturesRepository!,
+                                getProductDetail: widget.getProductDetail,
+                                getCart: widget.getCart,
+                                addProductToCart: widget.addProductToCart,
+                                onCartChanged: widget.onCartChanged,
+                                initialProvince: customer.province,
+                                initialPhone: customer.phone,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 24),
+                    ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          side: BorderSide(color: Colors.red.shade300),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: _handleLogout,
+                        icon: const Icon(Icons.logout),
+                        label: const Text('Cerrar sesión'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: colors.secondaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: colors.outlineVariant),
-                ),
-                child: Text(
-                  'Contacto Odoo: Partner #${customer.partnerId}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: colors.onSecondaryContainer,
-                  ),
-                ),
-              ),
-              const Divider(height: 40),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade700,
-                    side: BorderSide(color: Colors.red.shade300),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  onPressed: () async {
-                    await widget.logoutCustomer();
-                    if (mounted) setState(() {});
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Cerrar sesión'),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -441,6 +579,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _loginEmailController,
                   decoration: const InputDecoration(
                     labelText: 'Correo electrónico',
+                    hintText: 'ejemplo@correo.com',
                     prefixIcon: Icon(Icons.email_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -453,6 +592,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _loginPasswordController,
                   decoration: InputDecoration(
                     labelText: 'Contraseña',
+                    hintText: 'Escribe tu contraseña',
                     prefixIcon: Icon(Icons.lock_outline),
                     border: OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -511,6 +651,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _regFirstNameController,
                   decoration: const InputDecoration(
                     labelText: 'Nombre',
+                    hintText: 'Ej. Ana',
                     prefixIcon: Icon(Icons.person_outline),
                     border: OutlineInputBorder(),
                   ),
@@ -522,6 +663,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _regLastNameController,
                   decoration: const InputDecoration(
                     labelText: 'Apellido',
+                    hintText: 'Ej. Pérez',
                     prefixIcon: Icon(Icons.person_outline),
                     border: OutlineInputBorder(),
                   ),
@@ -534,6 +676,7 @@ class _AuthPageState extends State<AuthPage> {
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'Provincia',
+                    hintText: 'Selecciona una provincia',
                     prefixIcon: Icon(Icons.map_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -548,6 +691,7 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                       ),
                   ],
+                  hint: const Text('Selecciona una provincia'),
                   selectedItemBuilder: (context) => [
                     for (final province in _ecuadorProvinces)
                       Align(
@@ -559,13 +703,15 @@ class _AuthPageState extends State<AuthPage> {
                         ),
                       ),
                   ],
-                  onChanged: (province) => setState(() => _selectedProvince = province),
+                  onChanged: (province) =>
+                      setState(() => _selectedProvince = province),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _regPhoneController,
                   decoration: const InputDecoration(
                     labelText: 'Celular (10 dígitos, empieza con 09)',
+                    hintText: '0991234567',
                     prefixIcon: Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -589,6 +735,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _regEmailController,
                   decoration: const InputDecoration(
                     labelText: 'Correo electrónico',
+                    hintText: 'ejemplo@correo.com',
                     prefixIcon: Icon(Icons.email_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -602,6 +749,7 @@ class _AuthPageState extends State<AuthPage> {
                   decoration: InputDecoration(
                     labelText:
                         'Contraseña (8–50 caracteres, mayúscula, número y símbolo)',
+                    hintText: 'Ej. Montana2026!',
                     prefixIcon: Icon(Icons.lock_outline),
                     border: OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -655,6 +803,7 @@ class _AuthPageState extends State<AuthPage> {
                   controller: _regConfirmPasswordController,
                   decoration: InputDecoration(
                     labelText: 'Confirmar contraseña',
+                    hintText: 'Repite la contraseña',
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -675,6 +824,45 @@ class _AuthPageState extends State<AuthPage> {
                   obscureText: _obscureConfirmPassword,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _regConfirmPasswordController.text.isEmpty
+                            ? Icons.info_outline
+                            : _regPasswordController.text ==
+                                  _regConfirmPasswordController.text
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        size: 18,
+                        color: _regConfirmPasswordController.text.isEmpty
+                            ? colors.onSurfaceVariant
+                            : _regPasswordController.text ==
+                                  _regConfirmPasswordController.text
+                            ? Colors.green
+                            : colors.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _regConfirmPasswordController.text.isEmpty
+                            ? 'Confirma tu contraseña'
+                            : _regPasswordController.text ==
+                                  _regConfirmPasswordController.text
+                            ? 'Las contraseñas coinciden'
+                            : 'Las contraseñas no coinciden',
+                        style: TextStyle(
+                          color: _regConfirmPasswordController.text.isEmpty
+                              ? colors.onSurfaceVariant
+                              : _regPasswordController.text ==
+                                    _regConfirmPasswordController.text
+                              ? Colors.green
+                              : colors.error,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
@@ -697,4 +885,296 @@ class _AuthPageState extends State<AuthPage> {
       ),
     );
   }
+}
+
+class _ProfileEditDialog extends StatefulWidget {
+  const _ProfileEditDialog({
+    required this.currentName,
+    required this.currentProvince,
+    required this.currentPhone,
+    required this.provinces,
+    required this.onSave,
+  });
+
+  final String currentName;
+  final String currentProvince;
+  final String currentPhone;
+  final List<String> provinces;
+  final Future<Object?> Function(String name, String province, String phone)
+  onSave;
+
+  @override
+  State<_ProfileEditDialog> createState() => _ProfileEditDialogState();
+}
+
+class _ProfileEditDialogState extends State<_ProfileEditDialog> {
+  late final TextEditingController _firstName;
+  late final TextEditingController _lastName;
+  late final TextEditingController _phone;
+  late final String _initialFirst;
+  late final String _initialLast;
+  late final String _initialPhone;
+  late final String? _initialProvince;
+  String? _province;
+  String _error = '';
+  bool _saving = false;
+  bool _allowPop = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final parts = widget.currentName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    String first;
+    String last;
+    if (parts.length >= 3) {
+      first = parts.take(2).join(' ');
+      last = parts.skip(2).join(' ');
+    } else if (parts.length == 2) {
+      first = parts[0];
+      last = parts[1];
+    } else if (parts.length == 1) {
+      first = parts[0];
+      last = '';
+    } else {
+      first = '';
+      last = '';
+    }
+    _firstName = TextEditingController(text: first);
+    _lastName = TextEditingController(text: last);
+    _phone = TextEditingController(text: widget.currentPhone);
+    _initialFirst = _firstName.text;
+    _initialLast = _lastName.text;
+    _initialPhone = _phone.text;
+    _initialProvince = widget.provinces.contains(widget.currentProvince)
+        ? widget.currentProvince
+        : null;
+    _province = _initialProvince;
+    _loadSavedSplit();
+  }
+
+  Future<void> _loadSavedSplit() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedFirst = prefs.getString('auth_first_name');
+      final savedLast = prefs.getString('auth_last_name');
+      if (savedFirst != null && savedLast != null) {
+        final combined = '$savedFirst $savedLast'.trim();
+        if (combined == widget.currentName.trim() && mounted) {
+          setState(() {
+            _firstName.text = savedFirst;
+            _lastName.text = savedLast;
+            _initialFirst = savedFirst;
+            _initialLast = savedLast;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _firstName.dispose();
+    _lastName.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  bool get _dirty =>
+      _firstName.text != _initialFirst ||
+      _lastName.text != _initialLast ||
+      _phone.text != _initialPhone ||
+      _province != _initialProvince;
+
+  void _close(bool result) {
+    if (_allowPop || !mounted) return;
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(result);
+    });
+  }
+
+  Future<void> _requestClose() async {
+    if (_saving) return;
+    if (!_dirty) {
+      _close(false);
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('¿Descartar cambios?'),
+        content: const Text(
+          'Tienes cambios en tu perfil. ¿Quieres salir sin guardarlos?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Seguir editando'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Descartar'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) _close(false);
+  }
+
+  TextInputFormatter get _nameFormatter =>
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        if (!RegExp(r"^[A-Za-zÀ-ÖØ-öø-ÿĀ-žḀ-ỿ' -]*$").hasMatch(newValue.text) ||
+            newValue.text.startsWith(' ') ||
+            newValue.text.contains('  ')) {
+          return oldValue;
+        }
+        return newValue;
+      });
+
+  TextInputFormatter get _ecuadorPhoneFormatter =>
+      TextInputFormatter.withFunction((oldValue, newValue) {
+        final value = newValue.text;
+        if (value.isEmpty ||
+            value == '0' ||
+            value == '09' ||
+            RegExp(r'^09\d{0,8}$').hasMatch(value)) {
+          return newValue;
+        }
+        return oldValue;
+      });
+
+  Future<void> _save() async {
+    final first = _firstName.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final last = _lastName.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final phone = _phone.text;
+    final namePattern = RegExp(
+      r"^[A-Za-zÀ-ÖØ-öø-ÿĀ-žḀ-ỿ]+(?:[ '-][A-Za-zÀ-ÖØ-öø-ÿĀ-žḀ-ỿ]+)*$",
+    );
+    if (first.length > 50 ||
+        last.length > 50 ||
+        !namePattern.hasMatch(first) ||
+        !namePattern.hasMatch(last) ||
+        _province == null ||
+        !RegExp(r'^09\d{8}$').hasMatch(phone)) {
+      setState(() {
+        _error =
+            'Revisa nombre y apellido (máximo 50 caracteres), provincia y celular de 10 dígitos desde 09.';
+      });
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = '';
+    });
+    try {
+      await widget.onSave('$first $last', _province!, phone);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_first_name', first);
+        await prefs.setString('auth_last_name', last);
+      } catch (_) {}
+      if (mounted) _close(true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error.toString().replaceFirst('HttpException: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope<bool>(
+    canPop: _allowPop,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) _requestClose();
+    },
+    child: AlertDialog(
+      title: const Text('Editar perfil'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _firstName,
+              textCapitalization: TextCapitalization.words,
+              inputFormatters: [
+                _nameFormatter,
+                LengthLimitingTextInputFormatter(50),
+              ],
+              textInputAction: TextInputAction.none,
+              decoration: const InputDecoration(labelText: 'Nombre'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _lastName,
+              textCapitalization: TextCapitalization.words,
+              inputFormatters: [
+                _nameFormatter,
+                LengthLimitingTextInputFormatter(50),
+              ],
+              textInputAction: TextInputAction.none,
+              decoration: const InputDecoration(labelText: 'Apellido'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _province,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Provincia'),
+              items: [
+                for (final item in widget.provinces)
+                  DropdownMenuItem(value: item, child: Text(item)),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _province = value),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                _ecuadorPhoneFormatter,
+                LengthLimitingTextInputFormatter(10),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Teléfono',
+                hintText: '0991234567',
+              ),
+            ),
+            if (_error.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  _error,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : _requestClose,
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
+    ),
+  );
 }

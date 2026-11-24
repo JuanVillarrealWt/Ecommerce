@@ -7,6 +7,9 @@ param(
 $envFile = Join-Path $PSScriptRoot "..\.env"
 $apiKeyString = ""
 $jwtSecret = ""
+$stripeSecretKey = ""
+$stripeWebhookSecret = ""
+$stripeCurrency = "usd"
 if (Test-Path $envFile) {
     Get-Content $envFile | ForEach-Object {
         $line = $_.Trim()
@@ -18,6 +21,9 @@ if (Test-Path $envFile) {
             if ($k -eq "ODOO_BASE_URL" -and $v) { $OdooBaseUrl = $v }
             if ($k -eq "ODOO_API_KEY" -and $v) { $apiKeyString = $v }
             if ($k -eq "JWT_SECRET" -and $v) { $jwtSecret = $v }
+            if ($k -eq "STRIPE_SECRET_KEY" -and $v) { $stripeSecretKey = $v }
+            if ($k -eq "STRIPE_WEBHOOK_SECRET" -and $v) { $stripeWebhookSecret = $v }
+            if ($k -eq "STRIPE_CURRENCY" -and $v) { $stripeCurrency = $v }
         }
     }
 }
@@ -33,11 +39,22 @@ if (-not $apiKeyString) {
 if ($jwtSecret.Length -lt 64) {
     throw "Define JWT_SECRET con al menos 64 caracteres aleatorios en .env antes de iniciar la API."
 }
+if (-not $stripeSecretKey -and $env:STRIPE_SECRET_KEY) { $stripeSecretKey = $env:STRIPE_SECRET_KEY }
+if (-not $stripeWebhookSecret -and $env:STRIPE_WEBHOOK_SECRET) { $stripeWebhookSecret = $env:STRIPE_WEBHOOK_SECRET }
+if (-not $stripeSecretKey) {
+    throw "Define STRIPE_SECRET_KEY en .env antes de iniciar la API."
+}
+if (-not $stripeWebhookSecret) {
+    Write-Warning "Falta STRIPE_WEBHOOK_SECRET. Los pagos podrán iniciarse, pero el webhook no podrá verificar y confirmar los pedidos en Odoo."
+}
 
 $env:Odoo__BaseUrl = $OdooBaseUrl
 $env:Odoo__Database = $OdooDatabase
 $env:Odoo__ApiKey = $apiKeyString
 $env:Jwt__Secret = $jwtSecret
+$env:Stripe__SecretKey = $stripeSecretKey
+$env:Stripe__WebhookSecret = $stripeWebhookSecret
+$env:Stripe__Currency = $stripeCurrency
 
 $existingListener = Get-NetTCPConnection -State Listen -LocalPort 5000 -ErrorAction SilentlyContinue |
     Select-Object -First 1

@@ -11,6 +11,8 @@ public sealed class CreateOrder(IOrderService orderService, IProductCatalog prod
         int partnerId,
         string clientOrderRef,
         IReadOnlyList<CreateOrderItemRequest> items,
+        IReadOnlyDictionary<int, decimal>? discounts = null,
+        OrderDeliveryAddress? deliveryAddress = null,
         CancellationToken cancellationToken = default)
     {
         if (partnerId <= 0)
@@ -37,10 +39,14 @@ public sealed class CreateOrder(IOrderService orderService, IProductCatalog prod
                 throw new InvalidOperationException($"Stock insuficiente para '{product.Name}'. Disponible: {product.Stock}, solicitado: {item.Quantity}.");
 
             // Validar con el precio real vigente en Odoo (RN-02 / RN-06)
-            validatedLines.Add((product.Id, item.Quantity, (decimal)product.Price));
+            var price = (decimal)product.Price;
+            if (discounts is not null && discounts.TryGetValue(product.Id, out var percentage))
+                price = decimal.Round(price * (100m - percentage) / 100m, 2, MidpointRounding.AwayFromZero);
+            validatedLines.Add((product.Id, item.Quantity, price));
         }
 
-        return await orderService.CreateOrderAsync(partnerId, clientOrderRef, validatedLines, cancellationToken);
+        return await orderService.CreateDraftOrderAsync(
+            partnerId, clientOrderRef, validatedLines, deliveryAddress, cancellationToken);
     }
 }
 

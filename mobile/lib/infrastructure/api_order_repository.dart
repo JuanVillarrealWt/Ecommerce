@@ -18,10 +18,13 @@ class ApiOrderRepository implements OrderRepository {
   Future<OrderModel> createOrder(List<CartItem> items) async {
     final token = _authRepository.getAuthToken();
     if (token == null) {
-      throw const HttpException('Debe iniciar sesión para confirmar un pedido.');
+      throw const HttpException(
+        'Debe iniciar sesión para confirmar un pedido.',
+      );
     }
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20);
     try {
       final request = await client.postUrl(Uri.parse('$_baseUrl/api/orders'));
       request.headers.contentType = ContentType.json;
@@ -29,19 +32,21 @@ class ApiOrderRepository implements OrderRepository {
 
       final payload = {
         'items': items
-            .map((i) => {
-                  'productId': i.product.id,
-                  'quantity': i.quantity,
-                })
+            .map((i) => {'productId': i.product.id, 'quantity': i.quantity})
             .toList(),
       };
       request.write(jsonEncode(payload));
 
-      final response = await request.close().timeout(const Duration(seconds: 25));
+      final response = await request.close().timeout(
+        const Duration(seconds: 25),
+      );
       final body = await response.transform(utf8.decoder).join();
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final err = _extractErrorMessage(body, 'Error al crear pedido (${response.statusCode})');
+        final err = _extractErrorMessage(
+          body,
+          'Error al crear pedido (${response.statusCode})',
+        );
         throw HttpException(err);
       }
 
@@ -59,20 +64,27 @@ class ApiOrderRepository implements OrderRepository {
       return [];
     }
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
     try {
       final request = await client.getUrl(Uri.parse('$_baseUrl/api/orders'));
       request.headers.set('Authorization', 'Bearer $token');
 
-      final response = await request.close().timeout(const Duration(seconds: 20));
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
       final body = await response.transform(utf8.decoder).join();
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('No se pudieron recuperar los pedidos (${response.statusCode})');
+        throw HttpException(
+          'No se pudieron recuperar los pedidos (${response.statusCode})',
+        );
       }
 
       final list = jsonDecode(body) as List<dynamic>;
-      return list.map((item) => _mapOrder(item as Map<String, dynamic>)).toList();
+      return list
+          .map((item) => _mapOrder(item as Map<String, dynamic>))
+          .toList();
     } finally {
       client.close(force: true);
     }
@@ -85,24 +97,67 @@ class ApiOrderRepository implements OrderRepository {
       throw const HttpException('Debe iniciar sesión.');
     }
 
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
     try {
-      final request = await client.getUrl(Uri.parse('$_baseUrl/api/orders/$orderId'));
+      final request = await client.getUrl(
+        Uri.parse('$_baseUrl/api/orders/$orderId'),
+      );
       request.headers.set('Authorization', 'Bearer $token');
 
-      final response = await request.close().timeout(const Duration(seconds: 20));
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
       if (response.statusCode == 404) return null;
 
       final body = await response.transform(utf8.decoder).join();
       if (response.statusCode == 403) {
-        throw const HttpException('No tiene autorización para ver este pedido.');
+        throw const HttpException(
+          'No tiene autorización para ver este pedido.',
+        );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('Error al obtener detalle del pedido (${response.statusCode})');
+        throw HttpException(
+          'Error al obtener detalle del pedido (${response.statusCode})',
+        );
       }
 
       final json = jsonDecode(body) as Map<String, dynamic>;
       return _mapOrder(json);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  @override
+  Future<void> markOrderReceived(int orderId) async {
+    final token = _authRepository.getAuthToken();
+    if (token == null)
+      throw const HttpException('Inicia sesión para confirmar la recepción.');
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final request = await client.postUrl(
+        Uri.parse('$_baseUrl/api/orders/$orderId/received'),
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      final response = await request.close().timeout(
+        const Duration(seconds: 20),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        var message =
+            'No se pudo confirmar la recepción (${response.statusCode}).';
+        try {
+          final json = jsonDecode(body);
+          if (json is Map)
+            message =
+                json['detail']?.toString() ??
+                json['title']?.toString() ??
+                message;
+        } catch (_) {}
+        throw HttpException(message);
+      }
     } finally {
       client.close(force: true);
     }
@@ -113,13 +168,15 @@ class ApiOrderRepository implements OrderRepository {
     if (json['items'] is List) {
       for (final item in json['items'] as List) {
         final i = item as Map<String, dynamic>;
-        itemsList.add(OrderItemModel(
-          productId: i['productId'] as int? ?? 0,
-          productName: i['productName'] as String? ?? 'Producto',
-          quantity: i['quantity'] as int? ?? 1,
-          unitPrice: (i['unitPrice'] as num? ?? 0).toDouble(),
-          subtotal: (i['subtotal'] as num? ?? 0).toDouble(),
-        ));
+        itemsList.add(
+          OrderItemModel(
+            productId: i['productId'] as int? ?? 0,
+            productName: i['productName'] as String? ?? 'Producto',
+            quantity: i['quantity'] as int? ?? 1,
+            unitPrice: (i['unitPrice'] as num? ?? 0).toDouble(),
+            subtotal: (i['subtotal'] as num? ?? 0).toDouble(),
+          ),
+        );
       }
     }
 
@@ -130,6 +187,11 @@ class ApiOrderRepository implements OrderRepository {
       partnerName: json['partnerName'] as String? ?? 'Consumidor',
       state: json['state'] as String? ?? 'draft',
       amountTotal: (json['amountTotal'] as num? ?? 0).toDouble(),
+      amountUntaxed:
+          (json['amountUntaxed'] as num? ?? json['amountTotal'] as num? ?? 0)
+              .toDouble(),
+      amountTax: (json['amountTax'] as num? ?? 0).toDouble(),
+      received: json['received'] as bool? ?? false,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),
@@ -140,10 +202,11 @@ class ApiOrderRepository implements OrderRepository {
   String _extractErrorMessage(String body, String defaultMessage) {
     try {
       final json = jsonDecode(body) as Map<String, dynamic>;
-      return json['detail'] as String? ?? json['title'] as String? ?? defaultMessage;
+      return json['detail'] as String? ??
+          json['title'] as String? ??
+          defaultMessage;
     } catch (_) {
       return defaultMessage;
     }
   }
 }
-

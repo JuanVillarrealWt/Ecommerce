@@ -1,46 +1,80 @@
-# Matriz de Pruebas y Evidencias Técnicas
+# Guía de pruebas y criterios de aceptación
 
-Esta matriz vincula los Requisitos Funcionales (**RF**), Casos de Uso, Endpoints REST, Pruebas Automatizadas (**PA**) y los Criterios de Aceptación (**CA**) conforme a la especificación oficial del proyecto integrador.
+Esta guía relaciona las funciones disponibles con verificaciones manuales y automatizadas. No se atribuyen resultados de ejecución: registra aquí la fecha, entorno y salida real de cada corrida.
 
----
+## Matriz funcional
 
-## 1. Matriz RF → Caso de Uso → Endpoint → Prueba → Resultado
+| Área | Criterio de aceptación | Verificación sugerida |
+| --- | --- | --- |
+| Catálogo y categorías | Productos, detalle, imágenes y filtro por categoría reflejan datos de Odoo. | Consultar `GET /api/products`, `/api/products/{id}`, `/api/products/{id}/image` y `/api/categories`; validar en Flutter. |
+| Cuenta | Registro sincroniza el contacto; login entrega sesión; perfil solo modifica al cliente autenticado. | Probar datos válidos/inválidos y revisar asociación en Odoo. |
+| Carrito | El carrito se mantiene asociado a la cuenta al volver a iniciar sesión. | Añadir, cambiar cantidad, quitar; consultar `GET/PUT /api/cart` y reiniciar API. |
+| Checkout | Backend valida catálogo, cantidades, precio y cupón antes del pago. | Crear pago con carrito válido y probar cantidad/producto/cupón inválido. |
+| Stripe | Éxito confirma la orden; fallo/cancelación no la marcan pagada; webhook verifica firma. | Usar Stripe CLI con los tres eventos configurados y revisar estados/historial. |
+| Pedidos | Historial y detalle contienen solo pedidos propios confirmados. | Consultar `/api/orders` y `/api/orders/{id}` con dos cuentas; probar PDF y recepción. |
+| Funciones de cliente | Favoritos, direcciones, notificaciones y reseñas persisten y se aíslan por cuenta. | Probar endpoints `/api/customer/features`; reseñar solo producto comprado en pedido confirmado. |
 
-| ID Requisito | Caso de Uso | Endpoint REST | Prueba Asociada | Criterio de Aceptación (CA) | Resultado |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **RF-01** (Catálogo y detalle) | `GetProducts`, `GetProductDetail` | `GET /api/products`<br>`GET /api/products/{id}` | `PA-02` (Unitarias móvil Application)<br>`test/get_products_test.dart` | **CA-01:** Consulta catálogo y detalle de productos reales desde Odoo; datos faltantes no provocan caída. | **SUPERADO** (100%) |
-| **RF-02** (Categorías y filtro) | `GetCategories`, `GetProducts(categoryId)` | `GET /api/categories`<br>`GET /api/products?categoryId=X` | `PA-02` (Filtrado por categoría en móvil) | **CA-02:** Seleccionar categoría muestra únicamente productos asociados; si no existen, informa estado vacío. | **SUPERADO** (100%) |
-| **RF-03** (Carrito móvil) | `AddProductToCart`, `SetCartQuantity`, `RemoveProductFromCart`, `ClearCart` | N/A (Regla de Dominio Móvil) | `PA-01` (Unitarias móvil carrito)<br>`test/cart_test.dart` | **CA-03:** Cantidades estrictamente positivas (>0), subtotal orientativo en tiempo real, eliminación de artículos. | **SUPERADO** (100%) |
-| **RF-04** (Clientes / Auth) | `RegisterCustomer`, `LoginCustomer` | `POST /api/auth/register`<br>`POST /api/auth/login` | `PA-04` (Unitarias .NET / autorización) | **CA-04:** Credenciales inválidas deniegan acceso; cliente autenticado opera con JWT sin exponer secretos de Odoo. | **SUPERADO** (100%) |
-| **RF-05** (Confirmar pedido) | `CreateOrder` | `POST /api/orders` | `PA-03` (Unitarias .NET / Application)<br>`backend/ECommerce.Tests/CreateOrderTests.cs` | **CA-05:** Valida líneas de pedido en servidor, rechaza pedidos vacíos o cantidades `<=0`, registra orden en Odoo. | **SUPERADO** (100%) |
-| **RF-06** (Historial propio) | `GetCustomerOrders`, `GetCustomerOrderDetail` | `GET /api/orders`<br>`GET /api/orders/{id}` | `PA-04` (Unitarias .NET / autorización)<br>`backend/ECommerce.Tests/OrderAuthorizationTests.cs` | **CA-06:** El cliente ve sus pedidos y estados; solicitud de pedido perteneciente a otro cliente devuelve 403 Forbidden. | **SUPERADO** (100%) |
-| **RF-07** (Administración Odoo) | N/A (Interfaz Web Odoo) | `POST /json/2/product.product/search_read` | `PA-05` / `PA-06` (Integración Odoo) | **CA-07:** Modificaciones en catálogo de Odoo se reflejan dinámicamente en consultas de la app. | **SUPERADO** (100%) |
+## Comandos de pruebas automatizadas
 
----
+Desde la raíz del repositorio:
 
-## 2. Comandos de Ejecución de Pruebas Automatizadas
-
-### A. Pruebas Unitarias del Backend .NET (PA-03 y PA-04)
-Desde la raíz del proyecto o desde la carpeta `backend`:
 ```powershell
 dotnet test backend/ECommerce.Tests
 ```
-* **Resultado verificado:** 9 pruebas ejecutadas, **9 superadas**, 0 errores.
-  * Validación de pedido vacío.
-  * Rechazo de cantidades `<= 0`.
-  * Rechazo de productos inexistentes en catálogo.
-  * Comprobación de cálculo con precios de Odoo.
-  * Rechazo de acceso a pedidos de otro cliente con identidad simulada (403 Forbidden).
 
-### B. Pruebas Unitarias de la Aplicación Móvil en Flutter (PA-01 y PA-02)
-Desde la carpeta `mobile`:
+Para Flutter:
+
 ```powershell
+cd mobile
 flutter test
 ```
-* **Resultado verificado:** 10 pruebas ejecutadas, **10 superadas**, 0 errores.
-  * Operaciones de carrito: agregar, acumular, modificar y eliminar artículos.
-  * Validación de cantidades estrictamente positivas en carrito (excepciones ante `<= 0`).
-  * Consulta de productos con Fake Repository sin red.
-  * Filtrado de productos por categoría.
-  * Manejo controlado de excepciones de red.
 
+Anota el resultado observado; las pruebas pueden variar conforme se actualiza el proyecto. No asumas el resultado de corridas anteriores como evidencia del estado actual.
+
+## Prueba manual de integración
+
+1. Inicia la API, Stripe CLI y Flutter con los pasos del [README](../README.md).
+2. Confirma que catálogo y categorías cargan desde Odoo.
+3. Registra una cuenta, inicia sesión, guarda dirección y agrega productos al carrito.
+4. Completa un pago de prueba y confirma que el webhook actualiza el intento y la orden.
+5. Revisa historial/detalle, PDF, estado de recepción, reseñas, favoritos y notificaciones.
+6. Repite consultas autenticadas con otra cuenta para comprobar que no ve datos ajenos.
+
+## Registro de ejecución
+
+| Fecha | Entorno (Odoo/Android/Flutter/.NET) | Comando o flujo | Resultado observado | Evidencia |
+| --- | --- | --- | --- | --- |
+| Pendiente | Completar | Completar | Completar | Completar |
+
+## Revisión estática de la colección Postman existente
+
+Se contrastaron las solicitudes de `docs/Ecommerce_Postman_Collection.json` con los controladores y contratos actuales. Se corrigieron rutas obsoletas y se añadieron solicitudes para los flujos actuales. El JSON se pudo interpretar como una colección Postman v2.1; esto confirma su estructura, pero no demuestra conectividad con una instancia real.
+
+### Solicitudes que coinciden con rutas actuales
+
+- `GET /api/products`, `GET /api/products?categoryId=...`, `GET /api/products/{id}` y `GET /api/categories` siguen existiendo.
+- `POST /api/auth/register` y `POST /api/auth/login` siguen existiendo.
+- `GET /api/orders` y `GET /api/orders/{id}` siguen existiendo y requieren token.
+
+### Hallazgos corregidos y límites actuales
+
+1. **`GET /api/auth/me` no existe.** Se reemplazó por `GET /api/customer/features` para consultar la cuenta. La API ofrece `PUT /api/auth/profile` para actualizar el perfil.
+2. **`POST /api/orders` está obsoleto.** La colección ahora ofrece `POST /api/checkout/payments`; el endpoint antiguo responde `410 Gone`.
+3. **La colección no confirma pagos.** Iniciar checkout crea una cotización y un PaymentIntent de prueba. Confirmar el pago requiere el SDK Stripe y el webhook firmado; no se simula enviando manualmente un webhook desde Postman.
+4. **Los IDs de ejemplo son fijos.** Categoría `1`, producto `1` y pedido `1` pueden no existir en tu base Odoo o pertenecer a otros datos. Sustitúyelos por IDs reales al ejecutar solicitudes.
+5. **El token se obtiene al iniciar sesión.** Registro devuelve los datos del cliente. La solicitud Login guarda su token como `jwt_token` para las rutas autenticadas.
+6. **Algunas solicitudes escriben datos.** Registro crea un cliente; iniciar checkout crea una cotización y un intento de pago de prueba. `GET /api/customer/features` puede refrescar estados observados de pedidos y generar una notificación si detecta un cambio. Revisa la descripción antes de enviar solicitudes.
+
+La colección contiene solicitudes para catálogo, cuenta, carrito, checkout, pagos, pedidos y lecturas de funciones del cliente. Los IDs iniciales de `productId`, `categoryId` y `orderId` son ejemplos; cámbialos por valores presentes en tu Odoo. La colección no es parte de la compilación ni del arranque de Flutter o backend: el código no la carga como configuración. Un JSON mal formado afectaría su importación en Postman, no la app; enviar solicitudes sí puede crear los datos indicados arriba. El contrato vigente sigue siendo el código del backend y `api.md`.
+
+## Pruebas unitarias y de integración
+
+`dotnet test backend/ECommerce.Tests` y `flutter test` son los comandos indicados para las suites automatizadas. La matriz de arriba describe criterios a verificar, pero el registro permanece pendiente hasta ejecutar los comandos y guardar el resultado. Una prueba unitaria no sustituye las verificaciones externas de Odoo, Stripe CLI, red del dispositivo ni firma del webhook.
+
+Para aislar fallos, registra también:
+
+- Versión de .NET SDK, Flutter, Android y Postman usada en la ejecución.
+- URL base/API usada, sin escribir secretos ni tokens en el registro.
+- Si Odoo/Stripe estaban conectados y qué base/cuenta de prueba se utilizó.
+- Método, ruta, código HTTP observado y resultado funcional, ocultando datos personales.
+- Resultado de Flutter y logs backend relevantes, eliminando tokens, claves y datos sensibles antes de compartirlos.

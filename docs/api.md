@@ -1,174 +1,124 @@
-# Contrato HTTP Oficial de la API REST (ASP.NET Core)
+# Contrato HTTP de la API
 
-La app móvil se comunica **únicamente** con estos endpoints. Nunca accede a las rutas JSON-2 de Odoo ni a PostgreSQL.
+Flutter consume la API ASP.NET Core y no accede directamente a Odoo ni a PostgreSQL. Los endpoints de cuenta requieren `Authorization: Bearer <token>`. Base local: `http://localhost:5000`. Documentación interactiva: `/doc` o `/swagger`.
 
----
+## Catálogo
 
-## 1. Catálogo y Categorías
+| Método | Ruta | Uso |
+| --- | --- | --- |
+| GET | `/api/products` | Lista productos; acepta `?categoryId={id}`. |
+| GET | `/api/products/{id}` | Detalle de producto. |
+| GET | `/api/products/{id}/image` | Imagen de producto. |
+| GET | `/api/categories` | Lista categorías. |
 
-### Listar productos
-* **Método:** `GET`
-* **Ruta:** `/api/products`
-* **Parámetros de consulta (opcional):** `?categoryId={id}`
-* **Respuesta 200 OK:**
-```json
-[
-  {
-    "id": 7,
-    "name": "PROD-TEST-001",
-    "description": "Producto de prueba 1",
-    "price": 10.0,
-    "imageUrl": "data:image/jpeg;base64,...",
-    "categoryIds": [1]
-  }
-]
-```
+## Cuenta y carrito
 
-### Detalle de producto
-* **Método:** `GET`
-* **Ruta:** `/api/products/{id}`
-* **Respuesta 200 OK:** Objeto `ProductResponse` o `404 Not Found` si no existe en Odoo.
+| Método | Ruta | Auth | Uso |
+| --- | --- | --- | --- |
+| POST | `/api/auth/register` | No | Registra cliente y sincroniza contacto con Odoo. |
+| POST | `/api/auth/login` | No | Inicia sesión y devuelve token y cliente. |
+| PUT | `/api/auth/profile` | Sí | Actualiza perfil. |
+| GET/PUT | `/api/cart` | Sí | Consulta o reemplaza carrito persistido por cuenta. |
 
-### Listar categorías
-* **Método:** `GET`
-* **Ruta:** `/api/categories`
-* **Respuesta 200 OK:**
-```json
-[
-  {
-    "id": 1,
-    "name": "Electrónica",
-    "parentId": null
-  }
-]
-```
+## Checkout y pagos
 
----
+| Método | Ruta | Auth | Uso |
+| --- | --- | --- | --- |
+| POST | `/api/checkout/payments` | Sí | Valida productos y precios, crea cotización y PaymentIntent. Devuelve intento, `clientSecret`, orden, total y moneda. |
+| POST | `/api/checkout/payments/{attemptId}/confirmation` | Sí | Registra/consulta confirmación iniciada por el cliente. |
+| GET | `/api/checkout/payments/{attemptId}` | Sí | Consulta estado `creating`, `pending`, `paid`, `failed` o `canceled`. |
+| POST | `/api/checkout/webhook` | Firma Stripe | Valida la firma; `payment_intent.succeeded` confirma la orden en Odoo. |
+| GET | `/api/payments/history` | Sí | Historial de pagos del cliente. |
 
-## 2. Autenticación de Clientes
+Para desarrollo, Stripe CLI reenvía `payment_intent.succeeded`, `payment_intent.payment_failed` y `payment_intent.canceled` al webhook. Backend: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` y `STRIPE_CURRENCY` (por defecto `usd`). Flutter: `STRIPE_PUBLISHABLE_KEY` y `API_BASE_URL` como `--dart-define`. No incluyas secretos en la app. Los cupones se configuran en `DiscountCoupons` con `Code`, `Percentage` y `ProductIds`.
 
-### Registro de cliente
-* **Método:** `POST`
-* **Ruta:** `/api/auth/register`
-* **Cuerpo:**
-```json
-{
-  "name": "Juan Pérez",
-  "email": "juan@example.com",
-  "password": "Password123!",
-  "province": "Pichincha",
-  "phone": "0991234567"
-}
-```
-* **Respuesta 200 OK:**
-```json
-{
-  "id": 1,
-  "name": "Juan Pérez",
-  "email": "juan@example.com",
-  "partnerId": 6,
-  "province": "Pichincha",
-  "phone": "0991234567"
-}
-```
-La provincia debe ser una de las 24 provincias del Ecuador. El celular debe tener 10 dígitos y comenzar con `09`.
-El registro solo se completa cuando Odoo confirma la creación o actualización del contacto. Si Odoo no está disponible o no tiene configurada la provincia seleccionada, el API responde `503` y no crea la cuenta local.
+## Pedidos
 
-### Inicio de sesión
-* **Método:** `POST`
-* **Ruta:** `/api/auth/login`
-* **Cuerpo:**
-```json
-{
-  "email": "juan@example.com",
-  "password": "password123"
-}
-```
-* **Respuesta 200 OK:**
-```json
-{
-  "token": "eyJhbGciOi...",
-  "customer": {
-    "id": 1,
-    "name": "Juan Pérez",
-    "email": "juan@example.com",
-    "partnerId": 6
-  }
-}
-```
+| Método | Ruta | Auth | Uso |
+| --- | --- | --- | --- |
+| GET | `/api/orders` | Sí | Lista pedidos confirmados propios. |
+| GET | `/api/orders/{id}` | Sí | Detalle; impide acceso a pedidos ajenos. |
+| POST | `/api/orders` | Sí | Endpoint legado: `410 Gone`; usa checkout. |
+| POST | `/api/orders/{id}/received` | Sí | Registra recepción. |
 
----
+El historial excluye cotizaciones pendientes y canceladas. Flutter genera el comprobante PDF desde el detalle.
 
-## 3. Carrito de la cuenta (Requiere `Authorization: Bearer <token>`)
+## Funciones de cliente
 
-### Consultar carrito
-* **Método:** `GET`
-* **Ruta:** `/api/cart`
-* **Respuesta 200 OK:** `{"items": [...]}` con productos y cantidades del cliente autenticado.
+Base `/api/customer/features`. Salvo reseñas públicas, requiere autenticación y opera sobre la cuenta actual.
 
-### Reemplazar carrito
-* **Método:** `PUT`
-* **Ruta:** `/api/cart`
-* **Cuerpo:** `{"items": [{"productId": 7, "quantity": 2, "productName": "Producto", "unitPrice": 10.0, "description": null, "imageUrl": null, "categoryIds": [], "stock": 10}]}`
-* **Respuesta:** `204 No Content`.
+| Método | Ruta | Uso |
+| --- | --- | --- |
+| GET | `/api/customer/features` | Preferencias, direcciones, notificaciones, compras y estados. |
+| POST/DELETE | `/api/customer/features/favorites/{productId}` | Añade o quita favorito. |
+| GET | `/api/customer/features/products/{productId}/review-order` | Busca compra elegible para reseñar. |
+| GET | `/api/customer/features/products/{productId}/reviews` | Lista reseñas públicas. |
+| POST | `/api/customer/features/reviews` | Publica o actualiza reseña de compra confirmada. |
+| DELETE | `/api/customer/features/reviews/{productId}` | Elimina reseña propia. |
+| POST | `/api/customer/features/addresses` | Guarda dirección y sincroniza la principal con Odoo. |
+| PUT/DELETE | `/api/customer/features/addresses/{id}` | Edita o elimina dirección propia; la principal no se elimina. |
+| POST | `/api/customer/features/notifications/{id}/read` | Marca notificación leída. |
 
-El backend guarda el carrito por ID de cuenta en `account-carts.json`, por lo que se comparte entre dispositivos que inicien sesión contra esta misma API.
+Direcciones: provincia ecuatoriana, código postal de seis dígitos y celular de diez dígitos iniciado en `09`. Reseñas: calificación de 1 a 5 y comentario de hasta 1000 caracteres.
 
----
+## Errores y persistencia
 
-## 4. Pedidos (Requiere `Authorization: Bearer <token>`)
+Los errores usan formato compatible con `ProblemDetails` y pueden responder `400`, `401`, `403`, `404`, `409`, `410` o `503`. Conserva los stores JSON entre reinicios; no son compartidos entre instancias.
 
-### Crear y confirmar pedido
-* **Método:** `POST`
-* **Ruta:** `/api/orders`
-* **Cabecera:** `Authorization: Bearer <TOKEN>`
-* **Cuerpo:**
+## Ejemplos de solicitudes
+
+### Crear un intento de pago
+
+`POST /api/checkout/payments` requiere un token válido. El cuerpo envía identificadores y cantidades; el backend calcula los importes con datos actuales del catálogo. Puede incluir un cupón y el identificador de una dirección guardada del mismo usuario.
+
 ```json
 {
   "items": [
     { "productId": 7, "quantity": 1 },
     { "productId": 8, "quantity": 2 }
-  ]
+  ],
+  "couponCode": "CUMBRES10",
+  "savedAddressId": "00000000-0000-0000-0000-000000000000"
 }
 ```
-* **Respuesta 201 Created:**
+
+La respuesta `201 Created` contiene `attemptId`, `clientSecret`, datos de Customer/Customer Session de Stripe cuando estén disponibles, `orderName`, `amountTotal` y `currency`. No registres ni compartas `clientSecret`: es una credencial efímera de esa operación de pago. Una dirección puede omitirse; si se envía, debe pertenecer a la cuenta autenticada.
+
+### Reemplazar carrito de la cuenta
+
+`PUT /api/cart` recibe `items`. Cada elemento conserva los datos de presentación del carrito; las cantidades deben estar entre 1 y 9999 y el máximo es 200 productos. El endpoint reemplaza el contenido guardado y responde `204 No Content`.
+
 ```json
 {
-  "id": 1,
-  "name": "S00001",
-  "partnerId": 6,
-  "partnerName": "Juan Pérez",
-  "state": "sale",
-  "amountTotal": 40.0,
-  "createdAt": "2026-11-15T20:30:00Z",
   "items": [
     {
       "productId": 7,
-      "productName": "PROD-TEST-001",
-      "quantity": 1,
-      "unitPrice": 10.0,
-      "subtotal": 10.0
-    },
-    {
-      "productId": 8,
-      "productName": "PROD-TEST-002",
       "quantity": 2,
-      "unitPrice": 2,
-      "subtotal": 30.0
+      "productName": "Producto de ejemplo",
+      "unitPrice": 10.0,
+      "description": null,
+      "imageUrl": null,
+      "categoryIds": [],
+      "stock": 10
     }
   ]
 }
 ```
 
-### Historial de pedidos del cliente
-* **Método:** `GET`
-* **Ruta:** `/api/orders`
-* **Cabecera:** `Authorization: Bearer <TOKEN>`
-* **Respuesta 200 OK:** Lista de `OrderResponse` pertenecientes al cliente autenticado.
+El precio guardado en el carrito es una representación para la interfaz, no una fuente confiable para el cobro: checkout vuelve a verificar los precios.
 
-### Detalle de pedido
-* **Método:** `GET`
-* **Ruta:** `/api/orders/{id}`
-* **Cabecera:** `Authorization: Bearer <TOKEN>`
-* **Respuesta 200 OK:** Detalle del pedido.
-* **Respuesta 403 Forbidden:** Si el pedido pertenece a otro cliente (RN-04).
+## Configuración del cliente HTTP
+
+Al importar o duplicar solicitudes en Postman, configura `baseUrl` para apuntar al equipo que ejecuta la API. Emulador, teléfono y equipo pueden requerir direcciones distintas. En la colección de este repositorio, `POST /api/auth/login` guarda el token automáticamente en `jwt_token`; si haces una solicitud manual fuera de esa colección, copia el token de la respuesta y envíalo como `Authorization: Bearer <token>`. IDs de producto, pedido, dirección y categoría son propios de los datos actuales y no deben asumirse como universales.
+
+No llames manualmente al webhook desde una solicitud normal para simular un pago: Stripe CLI entrega el cuerpo y firma correspondientes. Usa el endpoint de checkout y deja que el proveedor emita eventos. La API acepta únicamente eventos con firma válida.
+
+## Orden sugerido de validación
+
+1. Comprueba `GET /api/products` y `GET /api/categories` sin token.
+2. Registra una cuenta válida o inicia sesión con una cuenta existente.
+3. Usa el token devuelto para probar perfil, carrito y funciones de cliente.
+4. Crea un intento de checkout y confirma el pago con la app/SDK Stripe de prueba.
+5. Comprueba el listener de Stripe, consulta `/api/checkout/payments/{attemptId}`, `/api/payments/history` y `/api/orders`.
+
+Este orden ayuda a distinguir errores de conectividad y configuración de Odoo de errores de autenticación o procesamiento de pagos.

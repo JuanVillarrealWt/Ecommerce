@@ -1,4 +1,5 @@
 using ECommerce.Application.Orders;
+using ECommerce.Application.CustomerFeatures;
 using ECommerce.WebApi.Contracts;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,9 +10,9 @@ namespace ECommerce.WebApi.Controllers;
 [Route("api/orders")]
 [Authorize]
 public sealed class OrdersController(
-    CreateOrder createOrder,
     GetCustomerOrders getCustomerOrders,
-    GetCustomerOrderDetail getCustomerOrderDetail) : ControllerBase
+    GetCustomerOrderDetail getCustomerOrderDetail,
+    ManageCustomerFeatures features) : ControllerBase
 {
     private int GetAuthenticatedPartnerId()
     {
@@ -23,29 +24,13 @@ public sealed class OrdersController(
     }
 
     [HttpPost]
-    [ProducesResponseType<OrderResponse>(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<OrderResponse>> Create([FromBody] CreateOrderApiRequest request, CancellationToken cancellationToken)
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    public IActionResult Create() => StatusCode(StatusCodes.Status410Gone, new ProblemDetails
     {
-        try
-        {
-            var partnerId = GetAuthenticatedPartnerId();
-            var items = request.Items.Select(i => new CreateOrderItemRequest(i.ProductId, i.Quantity)).ToArray();
-            var clientRef = $"MOB-{DateTime.UtcNow:yyyyMMddHHmmss}-{partnerId}";
-
-            var order = await createOrder.ExecuteAsync(partnerId, clientRef, items, cancellationToken);
-            return StatusCode(StatusCodes.Status201Created, OrderResponse.From(order));
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new ProblemDetails { Title = "Solicitud inválida", Detail = ex.Message, Status = StatusCodes.Status400BadRequest });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new ProblemDetails { Title = "Error de validación comercial", Detail = ex.Message, Status = StatusCodes.Status400BadRequest });
-        }
-    }
+        Title = "El pago es obligatorio",
+        Detail = "Inicia el pago desde POST /api/checkout/payments. La orden se confirma cuando Stripe notifica el pago.",
+        Status = StatusCodes.Status410Gone
+    });
 
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<OrderResponse>>(StatusCodes.Status200OK)]
@@ -54,7 +39,8 @@ public sealed class OrdersController(
     {
         var partnerId = GetAuthenticatedPartnerId();
         var orders = await getCustomerOrders.ExecuteAsync(partnerId, cancellationToken);
-        return Ok(orders.Select(OrderResponse.From).ToArray());
+        var receivedIds = (await features.GetAsync(partnerId, cancellationToken)).ReceivedOrderIds.ToHashSet();
+        return Ok(orders.Select(order => OrderResponse.From(order, receivedIds.Contains(order.Id))).ToArray());
     }
 
     [HttpGet("{id:int}")]
@@ -67,7 +53,9 @@ public sealed class OrdersController(
         {
             var partnerId = GetAuthenticatedPartnerId();
             var order = await getCustomerOrderDetail.ExecuteAsync(id, partnerId, cancellationToken);
-            return order is null ? NotFound() : Ok(OrderResponse.From(order));
+            if (order is null) return NotFound();
+            var received = (await features.GetAsync(partnerId, cancellationToken)).ReceivedOrderIds.Contains(order.Id);
+            return Ok(OrderResponse.From(order, received));
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -77,6 +65,26 @@ public sealed class OrdersController(
                 Detail = ex.Message,
                 Status = StatusCodes.Status403Forbidden
             });
+        }
+    }
+
+    [HttpPost("{id:int}/received")]
+    public async Task<IActionResult> MarkReceived(int id, CancellationToken cancellationToken)
+    {
+        var partnerId = GetAuthenticatedPartnerId();
+        try
+        {
+            var order = await getCustomerOrderDetail.ExecuteAsync(id, partnerId, cancellationToken);
+            if (order is null) return NotFound();
+            await features.UpdateAsync(partnerId, data =>
+            {
+                if (!data.ReceivedOrderIds.Contains(id)) data.ReceivedOrderIds.Add(id);
+            }, cancellationToken);
+            return NoContent();
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ProblemDetails { Title = "Acceso denegado", Detail = ex.Message });
         }
     }
 }

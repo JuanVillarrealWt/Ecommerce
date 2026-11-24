@@ -1,6 +1,7 @@
 # .NET
 **/bin/
 **/obj/
+**/.build-validation/
 backend/.api-run/
 .dotnet-cli/
 *.user
@@ -8,6 +9,7 @@ backend/.api-run/
 
 # Flutter / Dart
 mobile/.dart_tool/
+mobile/.kotlin/
 mobile/build/
 mobile/.flutter-plugins*
 mobile/.packages
@@ -16,6 +18,12 @@ mobile/.packages
 .env
 appsettings.Local.json
 **/secrets.json
+backend/ECommerce.WebApi/payment-attempts.json
+backend/ECommerce.WebApi/payment-attempts.json.tmp
+backend/ECommerce.WebApi/customer-features.json
+backend/ECommerce.WebApi/customer-features.json.tmp
+backend/ECommerce.WebApi/order-snapshots.json
+backend/ECommerce.WebApi/order-snapshots.json.tmp
 
 # IDE
 .idea/

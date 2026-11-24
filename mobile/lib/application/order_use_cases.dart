@@ -21,3 +21,8 @@ class GetOrderDetailUseCase {
   Future<OrderModel?> call(int orderId) => _repository.getOrderDetail(orderId);
 }
 
+class MarkOrderReceivedUseCase {
+  const MarkOrderReceivedUseCase(this._repository);
+  final OrderRepository _repository;
+  Future<void> call(int orderId) => _repository.markOrderReceived(orderId);
+}

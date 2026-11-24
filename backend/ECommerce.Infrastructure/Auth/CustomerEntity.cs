@@ -8,6 +8,7 @@ public sealed class CustomerEntity
     public string PasswordHash { get; set; } = string.Empty;
     public string Salt { get; set; } = string.Empty;
     public int PartnerId { get; set; }
+    public string? StripeCustomerId { get; set; }
     public string Province { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

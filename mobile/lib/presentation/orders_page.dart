@@ -2,22 +2,31 @@ import 'package:flutter/material.dart';
 
 import '../application/auth_use_cases.dart';
 import '../application/order_use_cases.dart';
+import '../application/customer_features_repository.dart';
 import '../domain/order.dart';
 import 'order_detail_page.dart';
 
+enum _DateFilterAction { change, clear }
+
 class OrdersPage extends StatefulWidget {
   const OrdersPage({
+    required this.refreshVersion,
     required this.getCustomerOrders,
     required this.getOrderDetail,
+    required this.markOrderReceived,
     required this.getCurrentCustomer,
     required this.onNavigateToAuth,
+    required this.customerFeaturesRepository,
     super.key,
   });
 
+  final int refreshVersion;
   final GetCustomerOrdersUseCase getCustomerOrders;
   final GetOrderDetailUseCase getOrderDetail;
+  final MarkOrderReceivedUseCase markOrderReceived;
   final GetCurrentCustomerUseCase getCurrentCustomer;
   final VoidCallback onNavigateToAuth;
+  final CustomerFeaturesRepository customerFeaturesRepository;
 
   @override
   State<OrdersPage> createState() => _OrdersPageState();
@@ -32,6 +41,12 @@ class _OrdersPageState extends State<OrdersPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant OrdersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshVersion != oldWidget.refreshVersion) _load();
   }
 
   void _load() {
@@ -85,10 +100,6 @@ class _OrdersPageState extends State<OrdersPage> {
     });
   }
 
-  String _formatDate(DateTime dt) {
-    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final customer = widget.getCurrentCustomer();
@@ -130,14 +141,34 @@ class _OrdersPageState extends State<OrdersPage> {
       appBar: AppBar(
         title: const Text('Mis Pedidos'),
         actions: [
-          IconButton(
-            onPressed: _selectDateRange,
-            icon: Icon(
-              hasDateFilter ? Icons.filter_alt : Icons.filter_alt_outlined,
-              color: hasDateFilter ? colors.primary : null,
+          if (hasDateFilter)
+            PopupMenuButton<_DateFilterAction>(
+              tooltip: 'Filtrar por fecha',
+              icon: Icon(Icons.filter_alt, color: colors.primary),
+              onSelected: (action) {
+                if (action == _DateFilterAction.change) {
+                  _selectDateRange();
+                } else {
+                  _clearDateFilter();
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(
+                  value: _DateFilterAction.change,
+                  child: Text('Cambiar rango de fechas'),
+                ),
+                PopupMenuItem(
+                  value: _DateFilterAction.clear,
+                  child: Text('Quitar filtro'),
+                ),
+              ],
+            )
+          else
+            IconButton(
+              onPressed: _selectDateRange,
+              icon: const Icon(Icons.filter_alt_outlined),
+              tooltip: 'Filtrar por fecha',
             ),
-            tooltip: 'Filtrar por fecha',
-          ),
           IconButton(
             onPressed: () => setState(_load),
             icon: const Icon(Icons.refresh),
@@ -147,73 +178,6 @@ class _OrdersPageState extends State<OrdersPage> {
       ),
       body: Column(
         children: [
-          // Barra de filtro por fechas (Desde - Hasta)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: colors.surfaceContainerLow,
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: _selectDateRange,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.surface,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: hasDateFilter
-                              ? colors.primary
-                              : colors.outlineVariant,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.calendar_month_outlined,
-                            size: 18,
-                            color: hasDateFilter
-                                ? colors.primary
-                                : colors.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              hasDateFilter
-                                  ? 'Desde: ${_formatDate(_startDate!)}   Hasta: ${_formatDate(_endDate!)}'
-                                  : 'Filtrar por rango de fechas (Desde - Hasta)',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: hasDateFilter
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: hasDateFilter
-                                    ? colors.primary
-                                    : colors.onSurface,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (hasDateFilter) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _clearDateFilter,
-                    icon: const Icon(Icons.close, size: 20),
-                    tooltip: 'Limpiar filtro',
-                  ),
-                ],
-              ],
-            ),
-          ),
           Expanded(
             child: FutureBuilder<List<OrderModel>>(
               future: _ordersFuture,
@@ -345,7 +309,11 @@ class _OrdersPageState extends State<OrdersPage> {
                                 ),
                               ),
                               Text(
-                                order.isConfirmed ? 'Confirmado' : 'Cotización',
+                                order.received
+                                    ? 'Recibido'
+                                    : (order.isConfirmed
+                                          ? 'Confirmado'
+                                          : 'Cotización'),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: order.isConfirmed
@@ -355,16 +323,20 @@ class _OrdersPageState extends State<OrdersPage> {
                               ),
                             ],
                           ),
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => OrderDetailPage(
                                   orderId: order.id,
                                   getOrderDetail: widget.getOrderDetail,
+                                  markOrderReceived: widget.markOrderReceived,
+                                  customerFeaturesRepository:
+                                      widget.customerFeaturesRepository,
                                 ),
                               ),
                             );
+                            if (mounted) setState(_load);
                           },
                         ),
                       );

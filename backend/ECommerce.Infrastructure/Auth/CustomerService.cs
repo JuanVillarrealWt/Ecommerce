@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ECommerce.Application.Customers;
+using ECommerce.Application.Payments;
 using ECommerce.Domain.Customers;
 using ECommerce.Infrastructure.Odoo;
 using Microsoft.Extensions.Hosting;
@@ -106,6 +107,91 @@ public sealed class CustomerService : ICustomerService
         var customers = await LoadCustomersAsync(cancellationToken);
         var entity = customers.FirstOrDefault(c => c.Id == id);
         return entity is null ? null : new Customer(entity.Id, entity.Name, entity.Email, entity.PartnerId, entity.Province, entity.Phone);
+    }
+
+    public async Task<Customer> UpdateProfileAsync(int id, string name, string province, string phone, CancellationToken cancellationToken = default)
+    {
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var customers = await LoadCustomersAsync(cancellationToken);
+            var entity = customers.FirstOrDefault(item => item.Id == id)
+                ?? throw new KeyNotFoundException("No se encontró el perfil del cliente.");
+            var partnerId = await GetOrCreateOdooPartnerAsync(name, entity.Email, cancellationToken, province, phone);
+            entity.Name = name;
+            entity.Province = province;
+            entity.Phone = phone;
+            entity.PartnerId = partnerId;
+            await SaveCustomersAsync(customers, cancellationToken);
+            return new Customer(entity.Id, entity.Name, entity.Email, entity.PartnerId, entity.Province, entity.Phone);
+        }
+        finally { _semaphore.Release(); }
+    }
+
+    public async Task UpdatePrimaryAddressAsync(int partnerId, string street, string city, string province, string postalCode, string phone, CancellationToken cancellationToken = default)
+    {
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var customers = await LoadCustomersAsync(cancellationToken);
+            var entity = customers.FirstOrDefault(item => item.PartnerId == partnerId)
+                ?? throw new KeyNotFoundException("No se encontró el perfil del cliente.");
+            var synced = await GetOrCreateOdooPartnerAsync(entity.Name, entity.Email, cancellationToken, province, phone);
+            if (synced != partnerId) throw new InvalidOperationException("El contacto de Odoo del cliente cambió; vuelve a iniciar sesión.");
+
+            using var writeRequest = CreateOdooRequest(HttpMethod.Post, "/json/2/res.partner/write", new
+            {
+                ids = new[] { partnerId },
+                vals = new Dictionary<string, object> { ["street"] = street, ["city"] = city, ["zip"] = postalCode, ["phone"] = phone }
+            });
+            using var writeResponse = await _http.SendAsync(writeRequest, cancellationToken);
+            writeResponse.EnsureSuccessStatusCode();
+            entity.Province = province;
+            entity.Phone = phone;
+            await SaveCustomersAsync(customers, cancellationToken);
+        }
+        finally { _semaphore.Release(); }
+    }
+
+    public async Task<PaymentCustomerProfile?> GetByPartnerIdAsync(int partnerId, CancellationToken cancellationToken = default)
+    {
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var customers = await LoadCustomersAsync(cancellationToken);
+            var entity = customers.FirstOrDefault(customer => customer.PartnerId == partnerId);
+            return entity is null
+                ? null
+                : new PaymentCustomerProfile(entity.PartnerId, entity.Name, entity.Email, entity.StripeCustomerId);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async Task<string> SaveStripeCustomerIdIfMissingAsync(
+        int partnerId,
+        string stripeCustomerId,
+        CancellationToken cancellationToken = default)
+    {
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var customers = await LoadCustomersAsync(cancellationToken);
+            var entity = customers.FirstOrDefault(customer => customer.PartnerId == partnerId)
+                ?? throw new InvalidOperationException("No se encontró el perfil del cliente autenticado.");
+
+            if (!string.IsNullOrWhiteSpace(entity.StripeCustomerId)) return entity.StripeCustomerId;
+
+            entity.StripeCustomerId = stripeCustomerId;
+            await SaveCustomersAsync(customers, cancellationToken);
+            return stripeCustomerId;
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     private static readonly JsonSerializerOptions OdooJsonOptions = new() { PropertyNamingPolicy = null };

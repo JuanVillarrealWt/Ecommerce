@@ -15,6 +15,20 @@ public sealed class OdooProductCatalog(HttpClient http, IOptions<OdooOptions> op
     private static DateTime _cacheExpiration = DateTime.MinValue;
     private static readonly SemaphoreSlim CacheLock = new(1, 1);
 
+    public static async Task InvalidateCacheAsync(CancellationToken cancellationToken = default)
+    {
+        await CacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            ProductCache.Clear();
+            _cacheExpiration = DateTime.MinValue;
+        }
+        finally
+        {
+            CacheLock.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<Product>> GetProductsAsync(int? categoryId = null, CancellationToken cancellationToken = default)
     {
         await EnsureCacheLoadedAsync(cancellationToken);
@@ -92,8 +106,8 @@ public sealed class OdooProductCatalog(HttpClient http, IOptions<OdooOptions> op
         {
             domain,
             fields = includeImage
-                ? new[] { "id", "name", "description_sale", "list_price", "image_1920", "image_512", "image_256", "image_128", "categ_id", "active", "sale_ok", "free_qty", "is_storable" }
-                : new[] { "id", "name", "description_sale", "list_price", "categ_id", "active", "sale_ok", "free_qty", "is_storable" },
+                ? new[] { "id", "name", "description_sale", "list_price", "image_1920", "image_512", "image_256", "image_128", "categ_id", "active", "sale_ok", "free_qty", "virtual_available", "is_storable" }
+                : new[] { "id", "name", "description_sale", "list_price", "categ_id", "active", "sale_ok", "free_qty", "virtual_available", "is_storable" },
             limit = 1000,
         });
 
@@ -117,11 +131,16 @@ public sealed class OdooProductCatalog(HttpClient http, IOptions<OdooOptions> op
 
         var stockTracked = row.TryGetProperty("is_storable", out var storable) &&
             storable.ValueKind == JsonValueKind.True;
-        var stock = stockTracked &&
-            row.TryGetProperty("free_qty", out var available) &&
-            available.TryGetDecimal(out var quantity) && quantity > 0
-                ? (int)Math.Floor(quantity)
-                : 0;
+        var freeQuantity = row.TryGetProperty("free_qty", out var freeQty) &&
+            freeQty.TryGetDecimal(out var freeAmount)
+                ? freeAmount
+                : 0m;
+        var forecastQuantity = row.TryGetProperty("virtual_available", out var forecast) &&
+            forecast.TryGetDecimal(out var forecastAmount)
+                ? forecastAmount
+                : freeQuantity;
+        var availableQuantity = Math.Max(0m, Math.Min(freeQuantity, forecastQuantity));
+        var stock = stockTracked ? (int)Math.Floor(availableQuantity) : 0;
 
         return new Product(
             id,
