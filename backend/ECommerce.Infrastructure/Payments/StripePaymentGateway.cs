@@ -20,6 +20,9 @@ public sealed class StripePaymentGateway(
         int partnerId,
         CancellationToken cancellationToken = default)
     {
+        var customerFingerprint = Convert.ToHexString(SHA256.HashData(
+            Encoding.UTF8.GetBytes($"{partnerId}\n{name}\n{email}")))
+            .ToLowerInvariant();
         using var json = await SendStripeFormAsync(
             "customers",
             new Dictionary<string, string>
@@ -28,7 +31,7 @@ public sealed class StripePaymentGateway(
                 ["email"] = email,
                 ["metadata[partner_id]"] = partnerId.ToString(CultureInfo.InvariantCulture)
             },
-            $"entre-cumbres-customer-{partnerId}",
+            $"entre-cumbres-customer-{partnerId}-{customerFingerprint[..24]}",
             cancellationToken);
 
         return new StripeCustomerCredentials(json.RootElement.GetProperty("id").GetString()!);

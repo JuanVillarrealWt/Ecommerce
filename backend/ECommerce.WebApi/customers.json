@@ -22,5 +22,29 @@
     "Province": "Tungurahua",
     "Phone": "0995691771",
     "CreatedAt": "2026-11-21T19:29:06.48492Z"
+  },
+  {
+    "Id": 3,
+    "Name": "Fernando Villarreal",
+    "Email": "fernando@gmail.com",
+    "PasswordHash": "/YeEIQkq39D2m2z\u002B6cjn9Z\u002BvLWV6j2GnBYwM12KuoO0=",
+    "Salt": "wb\u002Bh06WJI72UiNuB0iBOxw==",
+    "PartnerId": 12,
+    "StripeCustomerId": "cus_VhTphzxveQkqa5",
+    "Province": "Ca\u00F1ar",
+    "Phone": "0964643434",
+    "CreatedAt": "2026-11-26T15:35:44.7282119Z"
+  },
+  {
+    "Id": 4,
+    "Name": "Antonio Pico",
+    "Email": "toni@gmail.con",
+    "PasswordHash": "MQTac8dKpsrbvDTRamfns4cyO/3X8vSC/j8LVUwEw4g=",
+    "Salt": "xITFowuRR7VfDLjaNvceeA==",
+    "PartnerId": 13,
+    "StripeCustomerId": "cus_VhUOBWUFJeTBJB",
+    "Province": "Gal\u00E1pagos",
+    "Phone": "0992311582",
+    "CreatedAt": "2026-11-26T16:20:01.9003047Z"
   }
 ]

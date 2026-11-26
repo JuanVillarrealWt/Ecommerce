@@ -116,7 +116,8 @@ public sealed class JsonOrderSnapshotStore : IOrderSnapshotStore
         order.CurrencyCode,
         order.AmountUntaxed,
         order.AmountTax,
-        order.Received);
+        order.Received,
+        order.DeliveryAddress);
 
     private static Order ApplyCurrentState(Order snapshot, Order current) => new(
         snapshot.Id,
@@ -130,5 +131,6 @@ public sealed class JsonOrderSnapshotStore : IOrderSnapshotStore
         snapshot.CurrencyCode,
         snapshot.AmountUntaxed,
         snapshot.AmountTax,
-        current.Received);
+        current.Received,
+        snapshot.DeliveryAddress ?? current.DeliveryAddress);
 }

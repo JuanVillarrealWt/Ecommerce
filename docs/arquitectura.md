@@ -1,97 +1,124 @@
-# Arquitectura de la solución
+# Arquitectura de la Solución E-Commerce Integrada con Odoo y Stripe
 
-La solución integra una aplicación Flutter, una API ASP.NET Core y Odoo Community. Flutter solo consume la API propia. La API consulta el catálogo y administra los contactos y pedidos en Odoo; Stripe procesa los pagos y notifica el resultado al backend mediante webhooks.
+La solución implementa una arquitectura desacoplada basada en los principios de **Clean Architecture** (Arquitectura Limpia) tanto en el cliente móvil (**Flutter**) como en el backend intermedio (**ASP.NET Core .NET 10**), conectándose a **Odoo Community** mediante su protocolo oficial JSON-2 y a **Stripe** para la pasarela de pagos.
+
+---
+
+## Diagrama General de la Arquitectura
 
 ```mermaid
-flowchart LR
-  subgraph Mobile[Flutter · mobile/lib]
-    UI[Presentación] --> UC[Aplicación / casos de uso]
-    UC --> D[Dominio]
-    I[Infraestructura · API y almacenamiento local] --> UC
+flowchart TD
+  subgraph Mobile["Capa Móvil · Flutter (Clean Architecture)"]
+    direction TB
+    UI["Presentation\n- CatalogPage & Filters\n- ProductDetailPage & Reviews\n- CustomerFeaturesPage (Perfil, Direcciones)\n- AddressFormPage\n- OrdersPage & OrderDetailPage\n- AuthPage"]
+    APP_M["Application\n- GetProducts / GetCategories\n- CartUseCases & Sincronización\n- CheckoutUseCases\n- CustomerFeaturesRepository\n- OrderUseCases / AuthUseCases"]
+    DOM_M["Domain\n- Product, Category\n- Customer, SavedAddress\n- OrderModel, OrderLine\n- Cart, CartItem"]
+    INF_M["Infrastructure\n- ApiProductRepository / ApiCategoryRepository\n- ApiCartRepository / LocalCartRepository\n- ApiCheckoutRepository & StripeCheckoutNative\n- ApiCustomerFeaturesRepository\n- OrderPdfService (Comprobante PDF)"]
+
+    UI --> APP_M
+    APP_M --> DOM_M
+    INF_M --> APP_M
   end
-  subgraph API[ASP.NET Core · backend]
-    C[Web API / controladores] --> A[Aplicación / casos de uso]
-    A --> DOM[Dominio]
-    INF[Infraestructura · adaptadores y stores JSON] --> A
+
+  subgraph Backend["Backend Intermedio · ASP.NET Core .NET 10 (Clean Architecture)"]
+    direction TB
+    CTRL["WebApi (Controllers)\n- ProductsController / CategoriesController\n- AuthController (Register, Login, Profile)\n- CartController (Get, Replace)\n- CheckoutController (Payments, Webhook)\n- OrdersController (List, Detail, Received)\n- CustomerFeaturesController (Addresses, Favorites, Reviews)\n- PaymentHistoryController"]
+    APP_B["Application (Use Cases & Contracts)\n- StartCheckout / ProcessPaymentWebhook\n- RegisterCustomer / LoginCustomer\n- ManageCustomerFeatures\n- GetProducts / GetProductDetail\n- Interfaces: IProductCatalog, IOrderService, ICustomerService,\n  IPaymentGateway, IPaymentAttemptStore, IOrderSnapshotStore"]
+    DOM_B["Domain\n- Product, Category, Customer\n- Order, OrderItem, SavedAddress, ProductReview"]
+    INF_B["Infrastructure\n- OdooProductCatalog & OdooCategoryCatalog (JSON-2)\n- OdooOrderService (Quotations & Confirmations)\n- CustomerService (res.partner Sync & Password PBKDF2)\n- StripePaymentGateway (PaymentIntents & Webhook HMAC)\n- Stores JSON: account-carts, customer-features,\n  payment-attempts, order-snapshots, customers"]
+
+    CTRL --> APP_B
+    APP_B --> DOM_B
+    INF_B --> APP_B
   end
-  UI -->|HTTP JSON · Bearer| C
-  INF -->|JSON-2| O[Odoo Community]
-  O --> DB[(PostgreSQL de Odoo)]
-  INF -->|PaymentIntents| S[Stripe]
-  S -->|Webhook firmado| C
+
+  subgraph External["Servicios Externos y Base de Datos"]
+    STRIPE["Stripe Payment Gateway\n(PaymentIntents API & Webhooks)"]
+    ODOO["Odoo 20 / 17 Community\n(JSON-2 API con Bearer Token)"]
+    PG[("PostgreSQL 16\n(Persistencia Odoo)")]
+    ODOO --> PG
+  end
+
+  Mobile -- "HTTPS / JSON (Bearer JWT)" --> CTRL
+  INF_B -- "JSON-2 con API Key Técnico" --> ODOO
+  INF_B -- "Stripe API REST (Secret Key)" --> STRIPE
+  STRIPE -- "Webhooks firmados (Stripe-Signature)" --> CTRL
 ```
 
-## Aplicación móvil
+---
 
-- `mobile/lib/presentation`: navegación y pantallas de catálogo, detalle, cuenta, carrito, checkout, pedidos, direcciones y funciones de cliente.
-- `mobile/lib/application`: casos de uso y contratos para autenticación, catálogo, pedidos, checkout y funciones del cliente.
-- `mobile/lib/domain`: entidades y reglas independientes de Flutter y HTTP.
-- `mobile/lib/infrastructure`: repositorios API, carrito local, configuración de Stripe y adaptadores nativos/web.
+## Separación de Responsabilidades
 
-La app usa `API_BASE_URL` y `STRIPE_PUBLISHABLE_KEY` como `--dart-define`. La clave publicable puede estar en el cliente; las claves secretas de Stripe/Odoo y el secreto JWT son exclusivos del backend.
+### 1. Cliente Móvil (Flutter)
+- **Domain (`mobile/lib/domain`):** Modelos de negocio puros, inmutables y desacoplados del framework visual o HTTP (`Product`, `Category`, `Customer`, `OrderModel`, `Cart`, `CartItem`, `CheckoutPayment`). Maneja reglas locales de validación de cantidades mayores a cero y subtotales.
+- **Application (`mobile/lib/application`):** Interfaces abstractas de repositorios (`ProductRepository`, `CustomerFeaturesRepository`, `CartRepository`, etc.) y casos de uso organizados por módulo (`GetProducts`, `AuthUseCases`, `CartUseCases`, `OrderUseCases`).
+- **Infrastructure (`mobile/lib/infrastructure`):** Conectores HTTP hacia la API REST (`ApiCustomerFeaturesRepository`, `ApiCheckoutRepository`, etc.), pasarela nativa de Stripe (`StripeCheckoutNative` mediante `flutter_stripe`), serialización JSON y generación de comprobantes PDF en memoria (`OrderPdfService`).
+- **Presentation (`mobile/lib/presentation`):** Pantallas reactivas construidas con Material 3:
+  - `CatalogPage`: Catálogo interactivo con filtrado por categorías mediante chips horizontales y buscador.
+  - `ProductDetailPage`: Ficha técnica, selector de cantidad con límite de existencias, visor de imágenes zoomable, reseñas de clientes y botón de favoritos.
+  - `CustomerFeaturesPage`: Perfil del cliente, lista de favoritos, direcciones guardadas, avisos de pedidos y reseñas del usuario.
+  - `AddressFormPage`: Formulario con validación estricta de provincias ecuatorianas, ciudades dependientes, teléfono celular de 10 dígitos y código postal de 6 dígitos.
+  - `OrdersPage` y `OrderDetailPage`: Trazabilidad de pedidos, botón para marcar recibido y exportación de comprobante PDF.
+  - `AuthPage`: Pestañas de inicio de sesión y registro con validaciones en tiempo real.
 
-## API y backend
+---
 
-La solución .NET separa `ECommerce.WebApi`, `ECommerce.Application`, `ECommerce.Domain` y `ECommerce.Infrastructure`. Los controladores REST exponen catálogo, autenticación, carrito, checkout, pedidos, historial de pagos y funciones de cuenta. Application concentra los casos de uso y sus interfaces; Infrastructure implementa los adaptadores de Odoo JSON-2, Stripe y persistencia local.
+### 2. Backend Intermedio (ASP.NET Core .NET 10)
+- **Domain (`ECommerce.Domain`):** Entidades de dominio libres de dependencias tecnológicas externas.
+- **Application (`ECommerce.Application`):** Casos de uso con orquestación del flujo de compras, validación de cupones de descuento, verificación de compras previas antes de permitir reseñas y contratos de abstracción.
+- **Infrastructure (`ECommerce.Infrastructure`):**
+  - **Adaptadores Odoo JSON-2:** Conexión HTTP al endpoint `/jsonrpc` o rutas JSON-2 de Odoo para consultar `product.template`, `product.category`, `res.partner` y `sale.order`.
+  - **Adaptador Stripe:** Creación de `PaymentIntent` y validación criptográfica de firmas de webhook (`Stripe-Signature`) mediante HMAC-SHA256 con `STRIPE_WEBHOOK_SECRET`.
+  - **Seguridad:** Hashing seguro de contraseñas con PBKDF2 y generación de tokens JWT firmados con claim `partner_id`.
+  - **Stores de Persistencia Local (JSON):**
+    - `customers.json`: Credenciales de clientes locales vinculadas al `partner_id` de Odoo.
+    - `account-carts.json`: Carrito de compras persistente por ID de cuenta.
+    - `customer-features.json`: Direcciones de envío, productos favoritos, notificaciones y reseñas.
+    - `payment-attempts.json`: Auditoría y estados de cada intento de pago iniciado en Stripe.
+    - `order-snapshots.json`: Copia histórica inmutable de pedidos para emisión de comprobantes y validación de reseñas incluso si el cliente actualiza su nombre en Odoo.
+- **WebApi (`ECommerce.WebApi`):** Controladores REST que aplican políticas de autorización Bearer JWT, captura de errores estándar (`ProblemDetails`), compresión y documentación interactiva Swagger.
 
-La autenticación protege las operaciones de cuenta con Bearer token y el `partner_id` identifica al cliente. El backend vuelve a validar líneas y precios al iniciar checkout. Crea una cotización en Odoo, inicia el PaymentIntent y confirma idempotentemente el pedido tras recibir el evento firmado de Stripe. Los fallos y cancelaciones quedan registrados como estados del intento.
+---
 
-Los cupones se definen en `DiscountCoupons` de `backend/ECommerce.WebApi/appsettings.json` o en configuración del servidor. Cada regla contiene `Code`, `Percentage` y `ProductIds`; el backend aplica el descuento a los productos configurados después de consultar precios actuales.
+### 3. ERP (Odoo Community + PostgreSQL)
+- **Catálogo maestro:** Define los productos, precios oficiales, impuestos y existencias en almacén.
+- **Contactos (`res.partner`):** Almacena los clientes registrados y su dirección principal de entrega.
+- **Ventas (`sale.order`):** Registra las cotizaciones iniciales en estado borrador (`draft`) y las confirma como órdenes de venta oficiales (`sale`) cuando la pasarela de pagos notifica el cobro exitoso.
 
-## Persistencia y servicios externos
+---
 
-- Odoo administra catálogo, contactos y cotizaciones/órdenes; PostgreSQL es su base de datos.
-- El backend guarda datos auxiliares en archivos JSON locales: cuentas, carritos, funciones de cliente, intentos de pago y snapshots de órdenes. Deben conservarse entre reinicios para mantener continuidad. Este almacenamiento local requiere una alternativa compartida y durable para despliegues con varias instancias.
-- Stripe se integra desde el servidor con `STRIPE_SECRET_KEY`. El cliente usa la clave publicable. Stripe CLI reenvía eventos al endpoint local durante desarrollo; `STRIPE_WEBHOOK_SECRET` valida la firma.
+## Flujos Clave de Integración
 
-## Configuración y ejecución
-
-El script `scripts/run-api.ps1` carga `.env`, valida `JWT_SECRET` (mínimo 64 caracteres), prepara configuración de Odoo/Stripe, compila y sirve la API en `0.0.0.0:5000`. `scripts/run-mobile.ps1` carga `STRIPE_PUBLISHABLE_KEY` desde `.env` y puede resolver la IP de Tailscale o aceptar `-ApiBaseUrl`. El flujo manual de tres terminales está documentado en el [README](../README.md).
-
-La documentación interactiva de la API se sirve en `/doc` y `/swagger`.
-
-## Responsabilidades y límites de confianza
-
-Flutter presenta el flujo de compra y mantiene configuración pública necesaria para inicializar Stripe. No debe conocer la API key de Odoo, la clave secreta de Stripe ni el secreto de firma de webhooks. El backend es el punto de control para autenticación, validación de datos, precios, descuentos, creación de pedidos y confirmación de pagos.
-
-Odoo es la referencia para productos, precios del catálogo, contactos y órdenes de venta. Los importes enviados por Flutter o almacenados en el carrito no autorizan el cobro: el caso de uso de checkout vuelve a obtener y validar la información requerida antes de crear el intento de pago. La API devuelve al móvil el `clientSecret` necesario para completar la acción de pago de ese intento.
-
-Stripe y la API tienen responsabilidades separadas: el cliente inicia la experiencia de pago mediante el SDK; el backend crea el PaymentIntent usando su clave secreta; Stripe notifica resultados al endpoint webhook. El webhook valida `Stripe-Signature` con el secreto vigente y procesa eventos de forma idempotente antes de confirmar la cotización en Odoo. El cliente no debe decidir por sí mismo que una orden está pagada.
-
-## Secuencia de compra
-
+### 1. Flujo de Compra y Confirmación con Stripe
 ```mermaid
 sequenceDiagram
-  participant U as Cliente Flutter
-  participant A as API
-  participant O as Odoo
-  participant S as Stripe
-  U->>A: POST checkout/payments + token y productos
-  A->>O: Consulta precios y crea cotización
-  A->>S: Crea PaymentIntent
-  S-->>A: clientSecret e identificador de pago
-  A-->>U: attemptId, clientSecret y total
-  U->>S: Confirma el pago con SDK
-  S->>A: Webhook firmado del resultado
-  A->>A: Verifica firma y actualiza intento
-  A->>O: Confirma orden pagada
-  U->>A: Consulta estado e historial
+    autonumber
+    actor Cliente as Usuario (Flutter)
+    participant API as Backend .NET
+    participant Stripe as Stripe Gateway
+    participant Odoo as Odoo ERP
+
+    Cliente->>API: POST /api/checkout/payments (Items, Dirección, Cupón)
+    API->>Odoo: Consulta precios y crea cotización (sale.order draft)
+    API->>Stripe: Crea PaymentIntent (Monto, Moneda, Metadatos)
+    Stripe-->>API: Retorna clientSecret
+    API-->>Cliente: Retorna attemptId y clientSecret
+    Cliente->>Stripe: Confirma pago con tarjeta (Stripe SDK)
+    Stripe-->>Cliente: Pago procesado exitosamente
+    Stripe->>API: Webhook: payment_intent.succeeded (con Stripe-Signature)
+    API->>API: Verifica firma criptográfica (whsec_...)
+    API->>Odoo: Confirma orden de venta (action_confirm)
+    API->>API: Actualiza intento a "paid" y guarda snapshot
+    Cliente->>API: GET /api/orders (Consulta pedidos actualizados)
+    API-->>Cliente: Lista de órdenes con estado "sale"
 ```
 
-Un intento puede permanecer pendiente mientras se procesa el webhook. Un fallo o cancelación se refleja en el estado del pago; no debe mostrarse como compra confirmada en el historial de pedidos.
+### 2. Flujo de Direcciones y Sincronización con Odoo
+- Cuando el cliente registra su primera dirección o marca una dirección como predeterminada (`isDefault: true`), el backend invoca a Odoo para actualizar los campos `street`, `city`, `state_id`, `zip` y `phone` en el registro `res.partner`.
+- La dirección principal está protegida y no se puede eliminar sin antes asignar otra dirección como predeterminada.
+- Las ventanas de confirmación modales de eliminación y descarte tienen `barrierDismissible: false` para evitar cierres involuntarios al tocar fuera del diálogo.
 
-## Componentes y dependencias
-
-En Flutter, `presentation` depende de contratos/casos de uso de `application`; las implementaciones concretas viven en `infrastructure`. El dominio mantiene los modelos y reglas que no dependen de la interfaz. Los repositorios de API encapsulan HTTP y conversión JSON para que las pantallas no construyan solicitudes directamente.
-
-En backend, `WebApi` traduce HTTP a comandos/consultas de Application. `Application` coordina reglas y depende de interfaces; `Infrastructure` implementa esas interfaces contra Odoo, Stripe y archivos JSON. `Domain` contiene los modelos del negocio. Este diseño permite que los controladores no expongan protocolos de Odoo o Stripe al cliente móvil.
-
-## Persistencia local y continuidad
-
-Los JSON stores hacen que datos auxiliares sobrevivan al ciclo normal de la aplicación cuando los archivos se mantienen en el mismo despliegue. Deben respaldarse junto con el entorno local si tienen datos que se desean conservar. No son una base transaccional compartida: dos procesos o instancias podrían no ver la misma información. Para escalar o desplegar, se requiere almacenamiento durable con coordinación y copias de seguridad adecuadas.
-
-Los snapshots de pedido complementan la consulta a Odoo para conservar información que la experiencia de cliente necesita, por ejemplo después de cambios de perfil. No sustituyen a Odoo como sistema de ventas.
-
-## Red de desarrollo
-
-El script de API publica el servidor en `0.0.0.0:5000` para aceptar conexiones de la red de desarrollo. Eso no hace que cualquier URL sea automáticamente accesible: el host, firewall, red del dispositivo y `API_BASE_URL` deben coincidir. Stripe CLI debe poder abrir una conexión local a la URL de reenvío. En producción se requiere una URL pública HTTPS para webhooks y una configuración de red segura.
+### 3. Flujo de Reseñas Verificadas
+- Un cliente solo puede emitir una calificación de 1 a 5 estrellas si el producto pertenece a una orden suya confirmada (`sale` o `done`).
+- El backend comprueba primero los snapshots locales y, de ser necesario, consulta a Odoo para verificar la compra antes de registrar la reseña en `customer-features.json`.
+- La lista pública de reseñas agrupa las calificaciones por cliente, mostrando la más reciente en la ficha del producto.

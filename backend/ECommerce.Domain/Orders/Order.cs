@@ -21,7 +21,8 @@ public sealed class Order(
     string currencyCode = "USD",
     decimal amountUntaxed = 0m,
     decimal amountTax = 0m,
-    bool received = false)
+    bool received = false,
+    string? deliveryAddress = null)
 {
     public int Id { get; } = id;
     public string Name { get; } = name;
@@ -35,5 +36,6 @@ public sealed class Order(
     public decimal AmountUntaxed { get; } = amountUntaxed;
     public decimal AmountTax { get; } = amountTax;
     public bool Received { get; } = received;
+    public string? DeliveryAddress { get; } = deliveryAddress;
 }
 

@@ -192,6 +192,7 @@ class ApiOrderRepository implements OrderRepository {
               .toDouble(),
       amountTax: (json['amountTax'] as num? ?? 0).toDouble(),
       received: json['received'] as bool? ?? false,
+      deliveryAddress: json['deliveryAddress'] as String?,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),

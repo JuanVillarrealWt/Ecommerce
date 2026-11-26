@@ -30,6 +30,7 @@ class ProductDetailPage extends StatefulWidget {
 class _ProductDetailPageState extends State<ProductDetailPage> {
   int _quantity = 1;
   bool _isAdding = false;
+  bool _justAdded = false;
   late bool _isFavorite;
   late TextEditingController _qtyController;
   late Future<List<Map<String, dynamic>>> _reviewsFuture;
@@ -850,27 +851,38 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               height: 50,
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: colors.primary),
-                onPressed: (!hasStock || !isValidQty || _isAdding)
+                onPressed:
+                    (!hasStock || !isValidQty || _isAdding || _justAdded)
                     ? null
                     : () async {
                         setState(() => _isAdding = true);
-                        await widget.onAddToCart(product, _quantity);
-                        if (mounted) {
+                        try {
+                          await widget.onAddToCart(product, _quantity);
+                          if (!mounted) return;
+                          setState(() {
+                            _isAdding = false;
+                            _justAdded = true;
+                          });
+                          await Future<void>.delayed(
+                            const Duration(milliseconds: 1100),
+                          );
+                          if (mounted) setState(() => _justAdded = false);
+                        } catch (error) {
+                          if (!mounted) return;
                           setState(() => _isAdding = false);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Se agregaron $_quantity unidad(es) de ${product.name} al carrito.',
-                              ),
-                              backgroundColor: colors.primary,
-                            ),
+                            SnackBar(content: Text('$error')),
                           );
                         }
                       },
-                icon: const Icon(Icons.add_shopping_cart),
+                icon: Icon(
+                  _justAdded ? Icons.check : Icons.add_shopping_cart,
+                ),
                 label: Text(
                   _isAdding
                       ? 'Agregando...'
+                      : _justAdded
+                      ? 'Agregado al carrito'
                       : !product.stockTracked
                       ? 'Inventario sin configurar'
                       : !hasStock

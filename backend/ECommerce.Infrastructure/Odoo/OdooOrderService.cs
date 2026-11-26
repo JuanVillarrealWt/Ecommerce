@@ -130,7 +130,7 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
                 new object[] { "partner_id", "=", partnerId },
                 new object[] { "state", "in", new[] { "sale", "done" } }
             },
-            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id" },
+            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id", "note" },
             limit = 50
         });
 
@@ -160,7 +160,7 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
             {
                 new object[] { "id", "=", orderId }
             },
-            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id" },
+            fields = new[] { "id", "name", "partner_id", "state", "amount_untaxed", "amount_tax", "amount_total", "date_order", "order_line", "currency_id", "note" },
             limit = 1
         });
 
@@ -257,7 +257,23 @@ public sealed class OdooOrderService(HttpClient http, IOptions<OdooOptions> opti
         if (row.TryGetProperty("date_order", out var d) && d.TryGetDateTime(out var dt))
             createdAt = dt;
 
-        return new Order(id, name, partnerId, partnerName, state, amountTotal, createdAt, items, currencyCode, amountUntaxed, amountTax);
+        var deliveryAddress = row.TryGetProperty("note", out var note) && note.ValueKind == JsonValueKind.String
+            ? NormalizeNote(note.GetString())
+            : null;
+
+        return new Order(id, name, partnerId, partnerName, state, amountTotal, createdAt, items, currencyCode, amountUntaxed, amountTax, deliveryAddress: deliveryAddress);
+    }
+
+    private static string? NormalizeNote(string? note)
+    {
+        if (string.IsNullOrWhiteSpace(note)) return null;
+        var text = System.Text.RegularExpressions.Regex.Replace(
+            note,
+            @"<\s*(br\s*/?|/p|/div)\s*>",
+            "\n",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", string.Empty);
+        return System.Net.WebUtility.HtmlDecode(text).Trim();
     }
 
     private static readonly JsonSerializerOptions OdooJsonOptions = new()

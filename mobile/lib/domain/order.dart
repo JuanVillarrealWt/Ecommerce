@@ -25,6 +25,7 @@ class OrderModel {
     this.amountUntaxed = 0,
     this.amountTax = 0,
     this.received = false,
+    this.deliveryAddress,
     required this.createdAt,
     required this.items,
   });
@@ -38,6 +39,7 @@ class OrderModel {
   final double amountUntaxed;
   final double amountTax;
   final bool received;
+  final String? deliveryAddress;
   final DateTime createdAt;
   final List<OrderItemModel> items;
 

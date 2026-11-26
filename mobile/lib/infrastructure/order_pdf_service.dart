@@ -111,6 +111,10 @@ class OrderPdfService {
               ),
             ],
           ),
+          if (order.deliveryAddress?.trim().isNotEmpty ?? false) ...[
+            pw.SizedBox(height: 14),
+            _infoCard('DIRECCIÓN DE ENTREGA', order.deliveryAddress!.split('\n')),
+          ],
           pw.SizedBox(height: 24),
           pw.Text(
             'ARTÍCULOS DEL PEDIDO',

@@ -48,8 +48,18 @@ public sealed class CheckoutController(
                 selectedAddress = customerData.Addresses.FirstOrDefault(address => address.IsDefault);
             }
 
+            if (selectedAddress is null)
+            {
+                return BadRequest(new ProblemDetails
+                {
+                    Title = "Falta la dirección de entrega",
+                    Detail = "Registra y selecciona una dirección de entrega antes de pagar.",
+                    Status = StatusCodes.Status400BadRequest
+                });
+            }
+
             var items = request.Items.Select(item => new ECommerce.Application.Orders.CreateOrderItemRequest(item.ProductId, item.Quantity)).ToArray();
-            var deliveryAddress = selectedAddress is null ? null : new ECommerce.Application.Orders.OrderDeliveryAddress(
+            var deliveryAddress = new ECommerce.Application.Orders.OrderDeliveryAddress(
                 selectedAddress.Label,
                 selectedAddress.Recipient,
                 selectedAddress.Street,

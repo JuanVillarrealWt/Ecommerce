@@ -73,22 +73,10 @@ class _OrdersPageState extends State<OrdersPage> {
 
     if (picked != null) {
       setState(() {
-        _startDate = DateTime(
-          picked.start.year,
-          picked.start.month,
-          picked.start.day,
-          0,
-          0,
-          0,
-        );
-        _endDate = DateTime(
-          picked.end.year,
-          picked.end.month,
-          picked.end.day,
-          23,
-          59,
-          59,
-        );
+        // Keep calendar dates only. Comparing timestamps such as 23:59:59
+        // can exclude orders with fractional seconds on the selected end day.
+        _startDate = DateUtils.dateOnly(picked.start);
+        _endDate = DateUtils.dateOnly(picked.end);
       });
     }
   }
@@ -213,11 +201,15 @@ class _OrdersPageState extends State<OrdersPage> {
                 final allOrders = snapshot.data ?? [];
                 // Aplicar filtro de fecha desde - hasta
                 final orders = allOrders.where((o) {
-                  final orderDate = o.createdAt.toLocal();
-                  if (_startDate != null && orderDate.isBefore(_startDate!))
+                  final orderDate = DateUtils.dateOnly(o.createdAt.toLocal());
+                  if (_startDate != null &&
+                      orderDate.isBefore(DateUtils.dateOnly(_startDate!))) {
                     return false;
-                  if (_endDate != null && orderDate.isAfter(_endDate!))
+                  }
+                  if (_endDate != null &&
+                      orderDate.isAfter(DateUtils.dateOnly(_endDate!))) {
                     return false;
+                  }
                   return true;
                 }).toList();
 

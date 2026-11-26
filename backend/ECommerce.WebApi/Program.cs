@@ -12,6 +12,8 @@ using ECommerce.Infrastructure.Orders;
 using ECommerce.Application.Payments;
 using ECommerce.WebApi.Auth;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,8 +62,34 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy => policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Entre Cumbres E-Commerce API",
+        Version = "v1",
+        Description = "API para catálogo, clientes, direcciones, pedidos y pagos."
+    });
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "Token de acceso de la API",
+        In = ParameterLocation.Header,
+        Description = "Pega aquí el token que devuelve /api/auth/login."
+    });
+    options.OperationFilter<AuthorizeOperationFilter>();
+});
 
 var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Entre Cumbres API v1");
+    options.DocumentTitle = "Entre Cumbres API";
+});
 
 // Manejo global de excepciones amigable con formato ProblemDetails
 app.UseExceptionHandler(exceptionApp =>
@@ -159,8 +187,6 @@ app.MapGet("/doc", () => Results.Content("""
 </html>
 """, "text/html"));
 
-app.MapGet("/swagger", () => Results.Redirect("/doc"));
-
 app.MapControllers();
 
 app.Run();
@@ -170,4 +196,27 @@ static void ConfigureOdooHttpClient(HttpClient client, IConfiguration config)
     var baseUrl = config["Odoo:BaseUrl"] ?? "http://localhost:8069";
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(25);
+}
+
+sealed class AuthorizeOperationFilter : Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter
+{
+    public void Apply(OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
+    {
+        var method = context.MethodInfo;
+        var controller = method.DeclaringType;
+        var isAnonymous = method.IsDefined(typeof(AllowAnonymousAttribute), inherit: true) ||
+                          controller?.IsDefined(typeof(AllowAnonymousAttribute), inherit: true) == true;
+        var requiresAuthorization = method.IsDefined(typeof(AuthorizeAttribute), inherit: true) ||
+                                   controller?.IsDefined(typeof(AuthorizeAttribute), inherit: true) == true;
+
+        if (isAnonymous || !requiresAuthorization) return;
+
+        operation.Security =
+        [
+            new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference("Bearer", context.Document)] = []
+            }
+        ];
+    }
 }

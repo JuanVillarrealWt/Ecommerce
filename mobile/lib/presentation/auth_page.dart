@@ -88,6 +88,82 @@ class _AuthPageState extends State<AuthPage> {
   bool _obscureRegisterPassword = true;
   bool _obscureConfirmPassword = true;
   String? _errorMessage;
+  final Set<String> _touchedFields = {};
+  bool _showFieldErrors = false;
+
+  void _markFieldTouched(String field) {
+    if (_touchedFields.add(field) && mounted) setState(() {});
+  }
+
+  String? _fieldError(String field) {
+    if (!_showFieldErrors &&
+        !_touchedFields.contains(field) &&
+        !_fieldHasValue(field)) {
+      return null;
+    }
+    String? requiredOr(String value) =>
+        value.trim().isEmpty ? 'Este campo no puede estar vacío.' : null;
+    switch (field) {
+      case 'loginEmail':
+        return requiredOr(_loginEmailController.text) ??
+            (_isValidEmail(_loginEmailController.text.trim())
+                ? null
+                : 'Escribe un correo electrónico válido.');
+      case 'loginPassword':
+        return _loginPasswordController.text.isEmpty
+            ? 'Este campo no puede estar vacío.'
+            : null;
+      case 'firstName':
+        final value = _regFirstNameController.text.trim();
+        return requiredOr(value) ??
+            (_isValidName(value) ? null : 'Escribe un nombre válido.');
+      case 'lastName':
+        final value = _regLastNameController.text.trim();
+        return requiredOr(value) ??
+            (_isValidName(value) ? null : 'Escribe un apellido válido.');
+      case 'province':
+        return _selectedProvince == null ? 'Selecciona una provincia.' : null;
+      case 'phone':
+        final value = _regPhoneController.text.trim();
+        return requiredOr(value) ??
+            (RegExp(r'^09\d{8}$').hasMatch(value)
+                ? null
+                : 'Usa 10 dígitos y comienza con 09.');
+      case 'registerEmail':
+        final value = _regEmailController.text.trim();
+        return requiredOr(value) ??
+            (_isValidEmail(value) ? null : 'Escribe un correo válido.');
+      case 'registerPassword':
+        final value = _regPasswordController.text;
+        return value.isEmpty
+            ? 'Este campo no puede estar vacío.'
+            : (_isStrongPassword(value)
+                  ? null
+                  : 'Usa 8–50 caracteres con mayúscula, minúscula, número y símbolo.');
+      case 'confirmPassword':
+        final value = _regConfirmPasswordController.text;
+        return value.isEmpty
+            ? 'Este campo no puede estar vacío.'
+            : (value == _regPasswordController.text
+                  ? null
+                  : 'Las contraseñas no coinciden.');
+      default:
+        return null;
+    }
+  }
+
+  bool _fieldHasValue(String field) => switch (field) {
+    'loginEmail' => _loginEmailController.text.trim().isNotEmpty,
+    'loginPassword' => _loginPasswordController.text.isNotEmpty,
+    'firstName' => _regFirstNameController.text.trim().isNotEmpty,
+    'lastName' => _regLastNameController.text.trim().isNotEmpty,
+    'province' => _selectedProvince != null,
+    'phone' => _regPhoneController.text.trim().isNotEmpty,
+    'registerEmail' => _regEmailController.text.trim().isNotEmpty,
+    'registerPassword' => _regPasswordController.text.isNotEmpty,
+    'confirmPassword' => _regConfirmPasswordController.text.isNotEmpty,
+    _ => false,
+  };
 
   @override
   void initState() {
@@ -132,6 +208,7 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _handleLogin() async {
+    setState(() => _showFieldErrors = true);
     final email = _loginEmailController.text.trim();
     final password = _loginPasswordController.text;
 
@@ -181,6 +258,7 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _handleRegister() async {
+    setState(() => _showFieldErrors = true);
     final firstName = _capitalizeName(_regFirstNameController.text.trim());
     final lastName = _capitalizeName(_regLastNameController.text.trim());
     final name = '$firstName $lastName';
@@ -356,13 +434,16 @@ class _AuthPageState extends State<AuthPage> {
       _loginEmailController.text.isNotEmpty ||
       _loginPasswordController.text.isNotEmpty;
 
-  bool get _registerHasData => [
-    _regFirstNameController,
-    _regLastNameController,
-    _regEmailController,
-    _regPasswordController,
-    _regConfirmPasswordController,
-  ].any((controller) => controller.text.isNotEmpty);
+  bool get _registerHasData =>
+      [
+        _regFirstNameController,
+        _regLastNameController,
+        _regPhoneController,
+        _regEmailController,
+        _regPasswordController,
+        _regConfirmPasswordController,
+      ].any((controller) => controller.text.isNotEmpty) ||
+      _selectedProvince != null;
 
   Widget _passwordRule(String label, bool met) => Padding(
     padding: const EdgeInsets.only(top: 4),
@@ -541,11 +622,7 @@ class _AuthPageState extends State<AuthPage> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _authTabButton(
-                    'Registrarse',
-                    1,
-                    enabled: _activeTab == 1 || !_loginHasData,
-                  ),
+                  child: _authTabButton('Registrarse', 1, enabled: true),
                 ),
               ],
             ),
@@ -577,15 +654,18 @@ class _AuthPageState extends State<AuthPage> {
                   ),
                 TextField(
                   controller: _loginEmailController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Correo electrónico',
                     hintText: 'ejemplo@correo.com',
                     prefixIcon: Icon(Icons.email_outlined),
                     border: OutlineInputBorder(),
+                    errorText: _fieldError('loginEmail'),
                   ),
                   keyboardType: TextInputType.emailAddress,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('loginEmail'),
+                  onSubmitted: (_) => _markFieldTouched('loginEmail'),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -595,6 +675,7 @@ class _AuthPageState extends State<AuthPage> {
                     hintText: 'Escribe tu contraseña',
                     prefixIcon: Icon(Icons.lock_outline),
                     border: OutlineInputBorder(),
+                    errorText: _fieldError('loginPassword'),
                     suffixIcon: IconButton(
                       tooltip: _obscureLoginPassword
                           ? 'Mostrar contraseña'
@@ -612,6 +693,8 @@ class _AuthPageState extends State<AuthPage> {
                   obscureText: _obscureLoginPassword,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('loginPassword'),
+                  onSubmitted: (_) => _markFieldTouched('loginPassword'),
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
@@ -647,73 +730,94 @@ class _AuthPageState extends State<AuthPage> {
                       style: TextStyle(color: colors.onErrorContainer),
                     ),
                   ),
-                TextField(
-                  controller: _regFirstNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    hintText: 'Ej. Ana',
-                    prefixIcon: Icon(Icons.person_outline),
-                    border: OutlineInputBorder(),
+                Focus(
+                  onFocusChange: (hasFocus) {
+                    if (!hasFocus) _markFieldTouched('firstName');
+                  },
+                  child: TextField(
+                    controller: _regFirstNameController,
+                    decoration: InputDecoration(
+                      labelText: 'Nombre',
+                      hintText: 'Ej. Ana',
+                      prefixIcon: Icon(Icons.person_outline),
+                      border: OutlineInputBorder(),
+                      errorText: _fieldError('firstName'),
+                    ),
+                    inputFormatters: _limitedTextFormatters(name: true),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  inputFormatters: _limitedTextFormatters(name: true),
-                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: _regLastNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Apellido',
-                    hintText: 'Ej. Pérez',
-                    prefixIcon: Icon(Icons.person_outline),
-                    border: OutlineInputBorder(),
+                Focus(
+                  onFocusChange: (hasFocus) {
+                    if (!hasFocus) _markFieldTouched('lastName');
+                  },
+                  child: TextField(
+                    controller: _regLastNameController,
+                    decoration: InputDecoration(
+                      labelText: 'Apellido',
+                      hintText: 'Ej. Pérez',
+                      prefixIcon: Icon(Icons.person_outline),
+                      border: OutlineInputBorder(),
+                      errorText: _fieldError('lastName'),
+                    ),
+                    inputFormatters: _limitedTextFormatters(name: true),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  inputFormatters: _limitedTextFormatters(name: true),
-                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: _selectedProvince,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Provincia',
-                    hintText: 'Selecciona una provincia',
-                    prefixIcon: Icon(Icons.map_outlined),
-                    border: OutlineInputBorder(),
+                Focus(
+                  onFocusChange: (hasFocus) {
+                    if (!hasFocus) _markFieldTouched('province');
+                  },
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedProvince,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Provincia',
+                      hintText: 'Selecciona una provincia',
+                      prefixIcon: Icon(Icons.map_outlined),
+                      border: OutlineInputBorder(),
+                      errorText: _fieldError('province'),
+                    ),
+                    items: [
+                      for (final province in _ecuadorProvinces)
+                        DropdownMenuItem(
+                          value: province,
+                          child: Text(
+                            province,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    hint: const Text('Selecciona una provincia'),
+                    selectedItemBuilder: (context) => [
+                      for (final province in _ecuadorProvinces)
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            province,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (province) => setState(() {
+                      _selectedProvince = province;
+                      _touchedFields.add('province');
+                    }),
                   ),
-                  items: [
-                    for (final province in _ecuadorProvinces)
-                      DropdownMenuItem(
-                        value: province,
-                        child: Text(
-                          province,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  hint: const Text('Selecciona una provincia'),
-                  selectedItemBuilder: (context) => [
-                    for (final province in _ecuadorProvinces)
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(
-                          province,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: (province) =>
-                      setState(() => _selectedProvince = province),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _regPhoneController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Celular (10 dígitos, empieza con 09)',
                     hintText: '0991234567',
                     prefixIcon: Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(),
+                    errorText: _fieldError('phone'),
                   ),
                   keyboardType: TextInputType.phone,
                   inputFormatters: [
@@ -729,19 +833,24 @@ class _AuthPageState extends State<AuthPage> {
                     }),
                   ],
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('phone'),
+                  onSubmitted: (_) => _markFieldTouched('phone'),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _regEmailController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Correo electrónico',
                     hintText: 'ejemplo@correo.com',
                     prefixIcon: Icon(Icons.email_outlined),
                     border: OutlineInputBorder(),
+                    errorText: _fieldError('registerEmail'),
                   ),
                   keyboardType: TextInputType.emailAddress,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('registerEmail'),
+                  onSubmitted: (_) => _markFieldTouched('registerEmail'),
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -752,6 +861,7 @@ class _AuthPageState extends State<AuthPage> {
                     hintText: 'Ej. Montana2026!',
                     prefixIcon: Icon(Icons.lock_outline),
                     border: OutlineInputBorder(),
+                    errorText: _fieldError('registerPassword'),
                     suffixIcon: IconButton(
                       tooltip: _obscureRegisterPassword
                           ? 'Mostrar contraseña'
@@ -770,6 +880,8 @@ class _AuthPageState extends State<AuthPage> {
                   obscureText: _obscureRegisterPassword,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('registerPassword'),
+                  onSubmitted: (_) => _markFieldTouched('registerPassword'),
                 ),
                 _passwordRule(
                   'Mínimo 8 caracteres',
@@ -806,6 +918,7 @@ class _AuthPageState extends State<AuthPage> {
                     hintText: 'Repite la contraseña',
                     prefixIcon: const Icon(Icons.lock_outline),
                     border: const OutlineInputBorder(),
+                    errorText: _fieldError('confirmPassword'),
                     suffixIcon: IconButton(
                       tooltip: _obscureConfirmPassword
                           ? 'Mostrar contraseña'
@@ -824,6 +937,8 @@ class _AuthPageState extends State<AuthPage> {
                   obscureText: _obscureConfirmPassword,
                   inputFormatters: _limitedTextFormatters(),
                   onChanged: (_) => setState(() {}),
+                  onTapOutside: (_) => _markFieldTouched('confirmPassword'),
+                  onSubmitted: (_) => _markFieldTouched('confirmPassword'),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 6),

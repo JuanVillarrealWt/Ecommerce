@@ -26,7 +26,8 @@ public sealed record OrderResponse(
     IReadOnlyList<OrderItemDto> Items,
     decimal AmountUntaxed = 0m,
     decimal AmountTax = 0m,
-    bool Received = false)
+    bool Received = false,
+    string? DeliveryAddress = null)
 {
     public static OrderResponse From(Order order, bool received = false) => new(
         order.Id,
@@ -39,6 +40,7 @@ public sealed record OrderResponse(
         order.Items.Select(OrderItemDto.From).ToArray(),
         order.AmountUntaxed,
         order.AmountTax,
-        received || order.Received);
+        received || order.Received,
+        order.DeliveryAddress);
 }
 

@@ -228,9 +228,11 @@ public sealed class CustomerService : ICustomerService
 
             using var stateRequest = CreateOdooRequest(HttpMethod.Post, "/json/2/res.country.state/search_read", new
             {
-                domain = new object[] { new object[] { "country_id", "=", countryId }, new object[] { "name", "ilike", province } },
+                // Fetch Ecuador's small state list and compare normalized names below.
+                // Odoo's ilike filter can miss names when accents differ (e.g. Cañar).
+                domain = new object[] { new object[] { "country_id", "=", countryId } },
                 fields = new[] { "id", "name" },
-                limit = 30
+                limit = 100
             });
             using var stateResponse = await _http.SendAsync(stateRequest, cancellationToken);
             stateResponse.EnsureSuccessStatusCode();

@@ -1,113 +1,186 @@
-# E-commerce móvil con Flutter, ASP.NET Core, Odoo y Stripe
+# E-commerce Móvil con Flutter, ASP.NET Core, Odoo y Stripe
 
-Aplicación de comercio electrónico con cliente Flutter, API REST ASP.NET Core y Odoo Community para catálogo y pedidos. Los pagos se procesan con Stripe PaymentIntents y webhooks firmados.
+Plataforma completa de comercio electrónico móvil que integra **Flutter** (Android/iOS) con una **Web API en ASP.NET Core (.NET 10)** bajo Clean Architecture, conectada a **Odoo Community (v17/v20)** como ERP para catálogo, clientes y pedidos de venta, y a **Stripe** para procesamiento seguro de pagos con tarjeta mediante PaymentIntents y webhooks criptográficamente firmados.
 
-## Inicio rápido en tres pasos
+---
 
-Requisitos: .NET SDK 10, Flutter, Android Studio/emulador o dispositivo, Stripe CLI, acceso a Odoo y conectividad entre el móvil, la API y Stripe. Configura `.env` con datos locales de Odoo, `JWT_SECRET` aleatorio de al menos 64 caracteres y claves Stripe. No compartas `.env` ni claves secretas.
+## 🚀 Inicio Rápido en Tres Pasos
 
-Abre tres terminales desde la raíz y deja activos los procesos:
+Para levantar el ecosistema completo se requieren **3 terminales** abiertas en la raíz del proyecto. Asegúrate de tener Odoo levantado (local o en Docker) y tu archivo `.env` configurado.
 
-### 1. API
+```mermaid
+flowchart LR
+    A["1. API .NET\n(Puerto 5000)"] <--> B["2. Stripe CLI\n(Webhook Listener)"]
+    A <--> C["3. Flutter App\n(Móvil / Emulador)"]
+    A <--> D["Odoo ERP\n(JSON-2 API)"]
+```
 
+### Paso 1: Iniciar la API REST (.NET 10)
+En la **Terminal 1**, ejecuta el script de inicio:
 ```powershell
 ./scripts/run-api.ps1
 ```
+*Compila el backend, verifica el puerto 5000, valida que `JWT_SECRET` tenga al menos 64 caracteres, carga las variables de entorno desde `.env` y expone los endpoints en `http://0.0.0.0:5000`.*
 
-Compila y ejecuta la API en el puerto `5000`, leyendo configuración de Odoo, JWT y Stripe desde `.env`.
+---
 
-### 2. Stripe CLI
-
+### Paso 2: Escuchar y reenviar Webhooks de Stripe
+En la **Terminal 2**, ejecuta Stripe CLI para escuchar eventos de pago y reenviarlos a la API:
 ```powershell
 stripe listen --events "payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled" --forward-to http://100.75.46.80:5000/api/checkout/webhook
 ```
+> [!IMPORTANT]
+> Al iniciar, Stripe CLI mostrará en pantalla una clave secreta del webhook con formato:
+> `Your webhook signing secret is whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+> Si es la primera vez o la clave cambió, cópiala en tu archivo `.env` en la variable `STRIPE_WEBHOOK_SECRET=whsec_...` y reinicia la API (Paso 1).
 
-Stripe CLI mostrará un secreto `whsec_...`. Guárdalo como `STRIPE_WEBHOOK_SECRET` en `.env` y reinicia la API. La IP `100.75.46.80` debe ser alcanzable desde Stripe CLI y desde el dispositivo.
+---
 
-### 3. Flutter
+### Paso 3: Ejecutar la Aplicación (Flutter)
 
+#### Opción A: En Dispositivo Móvil / Emulador Android
+En la **Terminal 3**, compila y lanza la app móvil:
 ```powershell
-cd mobile
 flutter run --dart-define=API_BASE_URL=http://100.75.46.80:5000 --dart-define=STRIPE_PUBLISHABLE_KEY=pk_test_51UeNlG41lvnNi0betl1jy8P8jB0BBcW7PsN0hbX3obPbmmzmkPekjCf5u3mA3UGX7fFd7kKf6gbVG6zrdlSPiWC700DRTDrSBp
 ```
 
-La clave `pk_test_...` es publicable y de pruebas. `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `ODOO_API_KEY` y `JWT_SECRET` son solo del backend.
+#### Opción B: En Navegador Web (Chrome / Edge)
+Si prefieres correrla directamente en la web en tu navegador:
+```powershell
+cd mobile
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:5000 --dart-define=STRIPE_PUBLISHABLE_KEY=pk_test_51UeNlG41lvnNi0betl1jy8P8jB0BBcW7PsN0hbX3obPbmmzmkPekjCf5u3mA3UGX7fFd7kKf6gbVG6zrdlSPiWC700DRTDrSBp
+```
+*(También puedes reemplazar `-d chrome` por `-d edge` si usas Microsoft Edge).*
 
-## Configuración local
+---
 
-1. Copia `.env.example` a `.env`.
-2. Completa `ODOO_DB`, `ODOO_BASE_URL`, `ODOO_API_KEY`, `JWT_SECRET`, `STRIPE_SECRET_KEY` y `STRIPE_PUBLISHABLE_KEY`. La API acepta también `ODOO_DB_NAME`.
-3. Inicia Stripe CLI, copia su valor `whsec_...` a `STRIPE_WEBHOOK_SECRET` y vuelve a iniciar la API.
-4. Verifica que Odoo Community tenga Ventas habilitado, base inicializada y usuario técnico con API key.
+## 🌐 Conectividad en Red y Tailscale (Cambio de Computadora)
 
-El despliegue local de Odoo/PostgreSQL está descrito en `deployment/`. Cambia las contraseñas de demostración antes de levantarlo.
+Si estás trabajando en red local o a través de **Tailscale**:
 
-## Funcionalidades
+1. **¿Qué es la IP `100.75.46.80`?**
+   Es la dirección IP asignada a tu máquina dentro de tu red privada virtual de **Tailscale** (rango CGNAT `100.64.0.0/10`). Permite que tu teléfono móvil físico se conecte a la API de tu computadora sin importar si están en distintas redes Wi-Fi, siempre que el teléfono tenga la app de Tailscale encendida y conectada a la misma cuenta (Tailnet).
 
-- Catálogo Odoo, categorías, filtros y detalle de producto.
-- Registro e inicio de sesión, con sincronización de clientes a Odoo.
-- Carrito local y persistente por cuenta.
-- Checkout con validación de precios, cupones y Stripe.
-- Confirmación de pedidos en Odoo tras validar el webhook firmado.
-- Historial/detalle de pedidos, estado de pago y comprobante PDF.
-- Perfil, direcciones, favoritos, reseñas y notificaciones.
+2. **¿Qué hacer si corres el proyecto en OTRA computadora?**
+   - **Obtener la nueva IP de Tailscale:** En la nueva computadora, abre la terminal o la app de Tailscale y consulta tu IP (`tailscale ip -4` en consola). Supongamos que la nueva IP es `100.X.Y.Z`.
+   - **Ajustar el comando de Stripe CLI (Paso 2):**
+     - Si Stripe CLI corre en la **misma máquina** que la API: puedes usar `--forward-to http://localhost:5000/api/checkout/webhook` o `http://100.X.Y.Z:5000/api/checkout/webhook`.
+   - **Ajustar el comando de Flutter (Paso 3):**
+     - Cambia `--dart-define=API_BASE_URL=http://100.X.Y.Z:5000`.
+   - **Actualizar `STRIPE_WEBHOOK_SECRET`:**
+     - Al ejecutar `stripe listen` en una máquina o sesión nueva, Stripe CLI generará un nuevo secreto de webhook (`whsec_...`).
+     - **Obligatorio:** Actualiza `STRIPE_WEBHOOK_SECRET` en tu `.env` y reinicia `./scripts/run-api.ps1`. Si no lo haces, los pagos pasarán en Stripe pero la API rechazará el webhook por firma inválida y la orden nunca se confirmará en Odoo.
+   - **Emulador Android estándar:** Si no usas Tailscale y pruebas en el emulador de Android Studio en la misma PC, la IP del host es `http://10.0.2.2:5000`.
 
-El backend guarda carritos, preferencias, intentos de pago y snapshots en archivos JSON locales. Consérvalos entre reinicios; este almacenamiento está pensado para desarrollo y no se comparte entre varias instancias.
+---
 
-## Documentación
+## 📦 Características y Funcionalidades del Sistema
 
-- [Contrato de la API](docs/api.md)
-- [Arquitectura](docs/arquitectura.md)
-- [Plan de trabajo](docs/plan-trabajo.md)
-- [Matriz de pruebas](docs/pruebas.md)
+### 🛍️ Catálogo y Productos
+- Sincronización directa con Odoo: productos activos, descripción, precios e inventario en tiempo real.
+- Filtrado por categorías jerárquicas dinámicas mediante chips interactivos.
+- Buscador en tiempo real por nombre y descripción.
+- Visualización de imágenes en alta definición con visor interactivo en pantalla completa (zoom y paneo).
+- Control estricto de existencias: advertencia de stock insuficiente e imposibilidad de exceder el inventario disponible.
 
-Documentación interactiva: `http://localhost:5000/doc` o `http://localhost:5000/swagger`.
+### 👤 Autenticación y Gestión de Perfil
+- Registro de clientes con validación ecuatoriana (nombre, celular `09xxxxxxxx`, provincia de las 24 oficiales).
+- Sincronización bidireccional inmediata con contactos (`res.partner`) de Odoo.
+- Inicio de sesión con tokens JWT firmados con HMAC-SHA256 y hash de contraseñas con PBKDF2.
+- Edición de perfil con persistencia de pedidos anteriores en snapshots locales.
 
-## Requisitos y preparación detallada
+### 🛒 Carrito Persistente y Multi-dispositivo
+- Almacenamiento local para invitados y sincronización en servidor por cuenta (`account-carts.json`).
+- Al iniciar sesión en cualquier dispositivo, el carrito del cliente se restaura automáticamente.
 
-Instala .NET SDK 10 y confirma que `dotnet --version` muestre una versión compatible con `net10.0`. Instala Flutter y Android Studio para disponer del SDK Android, emulador y herramientas de compilación. Para un teléfono físico, habilita depuración USB y verifica que el teléfono esté en una red que alcance la IP indicada en `API_BASE_URL`. Stripe CLI debe estar instalado y autenticado con la cuenta de pruebas correspondiente.
+### 💳 Checkout y Pagos con Stripe
+- Creación de cotización pendiente (`sale.order`) en Odoo con líneas y precios revalidados en backend.
+- Soporte para cupones de descuento configurables (`DiscountCoupons` en `appsettings.json`).
+- Integración nativa con Stripe PaymentIntents.
+- Confirmación desacoplada y robusta mediante Webhook: la orden solo se confirma como venta (`sale`) en Odoo cuando Stripe certifica criptográficamente el evento `payment_intent.succeeded`.
+- Resiliencia ante fallos: registro de intentos en `payment-attempts.json`.
 
-Odoo Community debe estar ejecutándose con una base creada, la aplicación Ventas instalada y productos disponibles. Crea un usuario técnico para la integración y una API key. La API usa ese acceso para consultar el catálogo, sincronizar clientes y gestionar cotizaciones/pedidos. No incluyas la API key en Flutter.
+### 📦 Gestión de Pedidos y Comprobantes
+- Historial de pedidos confirmados por cliente autenticado.
+- Detalle interactivo con trazabilidad de estado (`sale`, `done`, `cancel`).
+- Confirmación de recepción: el cliente puede marcar su pedido como entregado/recibido.
+- Generación de comprobante PDF profesional directamente en la app con desglose de productos, totales y datos del cliente.
+- Historial completo de transacciones y estados de pago en Stripe (`/api/payments/history`).
 
-### Variables del archivo `.env`
+### 📍 Direcciones de Envío Guardadas
+- Múltiples direcciones por cliente con etiqueta (Casa, Trabajo, etc.), destinatario, calle, ciudad, provincia, código postal (6 dígitos) y teléfono celular (`09xxxxxxxx`).
+- Selección de dirección principal (sincronizada automáticamente con Odoo).
+- Protección de integridad: la dirección predeterminada no se puede eliminar, solo editar.
+- Confirmación modal segura (`barrierDismissible: false`) para evitar cierres accidentales.
+- Detección de cambios sin guardar con diálogo de confirmación antes de salir.
 
-El archivo `.env.example` es una plantilla; duplica el archivo como `.env` y completa los valores para tu entorno. El script de API reconoce `ODOO_DB` (o `ODOO_DB_NAME`), `ODOO_BASE_URL`, `ODOO_API_KEY`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` y `STRIPE_CURRENCY`. El script móvil lee `STRIPE_PUBLISHABLE_KEY`.
+### ⭐ Reseñas y Calificaciones
+- Calificación de 1 a 5 estrellas y comentarios de hasta 1000 caracteres.
+- **Regla de negocio estricta:** Solo se permite calificar productos que el cliente haya comprado efectivamente en pedidos confirmados (`sale` o `done`).
+- Edición y eliminación de reseñas propias con actualización reactiva instantánea.
+- Promedio y conteo de reseñas visible en el detalle del producto para todos los usuarios.
 
-`JWT_SECRET` debe ser aleatorio y de al menos 64 caracteres, condición que valida `run-api.ps1`. Stripe separa la clave secreta del servidor (`sk_test_...` en pruebas) y la clave publicable del cliente (`pk_test_...`). El secreto webhook (`whsec_...`) es específico del listener Stripe CLI activo: si Stripe CLI genera otro secreto, actualiza `.env` y reinicia la API para que lo cargue.
+### 💖 Favoritos y Notificaciones
+- Guardado y eliminación de productos favoritos con actualización optimista inmediata.
+- Notificaciones automáticas ante cambios de estado en pedidos de Odoo.
+- Marcado de notificaciones leídas.
 
-### Orden de inicio y comprobaciones
+---
 
-1. Completa `.env` y asegúrate de que Odoo está accesible desde el equipo que ejecuta la API.
-2. Inicia la API en la primera terminal. Espera a que termine la compilación y quede escuchando en el puerto 5000.
-3. Inicia Stripe CLI en la segunda terminal. Conserva esa sesión abierta mientras pruebas pagos. El listener debe reenviar al mismo host/puerto de la API.
-4. Inicia Flutter en la tercera terminal. La URL `API_BASE_URL` debe ser accesible desde el emulador/dispositivo; `localhost` en el teléfono representa al propio teléfono, no al computador.
-5. Comprueba el catálogo y el inicio de sesión antes de probar pagos. Completa una compra de prueba y verifica el webhook y el estado del pedido en Odoo.
+## 🛠️ Estructura del Proyecto
 
-El flujo de tres pasos solicitado está configurado para `100.75.46.80`. Si esa dirección cambia o no es visible para el dispositivo, reemplázala tanto en `--forward-to` como en `API_BASE_URL`. En emuladores Android el host suele alcanzarse mediante `10.0.2.2`; en un teléfono físico usa una dirección de red alcanzable y revisa el firewall.
+```text
+Ecommerce/
+├── backend/                         # Backend en ASP.NET Core (.NET 10)
+│   ├── ECommerce.Domain/            # Entidades de negocio puras
+│   ├── ECommerce.Application/       # Casos de uso, validaciones y contratos
+│   ├── ECommerce.Infrastructure/    # Adaptadores Odoo JSON-2, Stripe, JWT y JSON stores
+│   └── ECommerce.WebApi/            # Controladores REST, middleware y configuración
+├── mobile/                          # Cliente móvil en Flutter
+│   ├── lib/
+│   │   ├── domain/                  # Modelos de negocio inmutables
+│   │   ├── application/             # Casos de uso e interfaces de repositorios
+│   │   ├── infrastructure/          # Clientes HTTP, persistencia y Stripe Native
+│   │   └── presentation/            # Pantallas Flutter (Catálogo, Checkout, Perfil, etc.)
+├── deployment/                      # Docker Compose para Odoo Community y PostgreSQL
+├── docs/                            # Documentación técnica
+│   ├── api.md                       # Especificación completa de endpoints HTTP
+│   ├── arquitectura.md              # Diagramas y decisiones de diseño
+│   ├── plan-trabajo.md              # Estado de módulos y requerimientos
+│   └── pruebas.md                   # Matriz de pruebas y criterios de aceptación
+└── scripts/                         # Scripts de ejecución automatizada
+    ├── run-api.ps1                  # Compila y arranca la Web API
+    └── run-mobile.ps1               # Lanza la aplicación Flutter
+```
 
-## Flujo principal de compra
+---
 
-La app carga productos y categorías desde la API. Al iniciar sesión, el backend asocia las operaciones con la cuenta autenticada. El carrito se puede sincronizar con la cuenta. Durante checkout, el backend valida los productos y precios consultando el catálogo actual, crea una cotización en Odoo e inicia un PaymentIntent en Stripe. El cliente confirma la operación usando el SDK Stripe; el backend utiliza el webhook firmado para procesar el resultado y confirmar en Odoo los pagos exitosos.
+## ⚙️ Configuración del Archivo `.env`
 
-El cliente puede consultar estado e historial de pagos y pedidos. Las reseñas están asociadas a productos de pedidos confirmados; las direcciones se validan antes de guardarse y la dirección principal se sincroniza con el contacto de Odoo. Revisa [api.md](docs/api.md) para los contratos y restricciones de cada endpoint.
+Copia `.env.example` a `.env` en la raíz del proyecto y completa tus credenciales:
 
-## Persistencia y datos locales
+```env
+# Conexión con Odoo Community
+ODOO_BASE_URL=http://localhost:8069
+ODOO_DB=ecommerce_limpio
+ODOO_API_KEY=tu_api_key_de_usuario_tecnico
 
-Odoo mantiene los datos principales de productos, contactos y ventas. El backend usa archivos JSON de desarrollo para información complementaria como carritos, preferencias, intentos de pago y snapshots. No borres esos archivos si necesitas mantener el estado entre reinicios. El proyecto está configurado para una instancia local; varias instancias del backend no comparten automáticamente esos archivos.
+# Seguridad de Tokens
+JWT_SECRET=tu_clave_aleatoria_muy_larga_de_al_menos_64_caracteres_hex_o_alfanumericos
 
-La base Postman utiliza algunos IDs fijos de ejemplo. Los IDs de producto, categoría y pedido dependen del contenido de la base Odoo; selecciona valores que existan en tu instalación antes de enviar esas solicitudes.
+# Pasarela de Pagos Stripe
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_CURRENCY=usd
+```
 
-## Solución de problemas
+---
 
-| Síntoma | Revisar |
-| --- | --- |
-| API no inicia | `.env`, API key de Odoo, `JWT_SECRET` de 64 caracteres, claves Stripe, puerto 5000 y salida de `dotnet build`. |
-| Flutter no conecta | `API_BASE_URL`, IP del equipo, firewall, red del dispositivo y que la API siga activa. |
-| Catálogo vacío o error Odoo | URL/base/API key, permisos del usuario técnico, productos activos y conectividad Odoo JSON-2. |
-| Stripe no actualiza el pedido | Listener Stripe CLI activo, `whsec_...` vigente en `.env`, reinicio de API después de cambiarlo y URL de reenvío correcta. |
-| Dirección rechazada | Provincia válida, código postal de seis dígitos y celular ecuatoriano de diez dígitos que comience en `09`. |
-| Carrito o estado cambió tras reinicio | Confirma que los archivos JSON locales no se hayan eliminado ni reemplazado. |
+## 📖 Documentación Adicional
 
-## Colección de Postman
-
-La colección actualizada está en `docs/Ecommerce_Postman_Collection.json` y agrupa solicitudes manuales para catálogo, cuenta, carrito, checkout, pagos, pedidos y algunas lecturas de funciones del cliente. No se necesita para compilar o iniciar la aplicación y el código no la carga. Algunas solicitudes pueden crear datos de prueba; lee sus descripciones antes de enviarlas. Los IDs iniciales son ejemplos que deben existir en tu Odoo. Consulta el análisis en [pruebas.md](docs/pruebas.md); el contrato principal sigue siendo [api.md](docs/api.md) y los controladores del backend.
+- [Contrato HTTP de la API REST (api.md)](docs/api.md)
+- [Arquitectura de la Solución (arquitectura.md)](docs/arquitectura.md)
+- [Guía de Pruebas y Aceptación (pruebas.md)](docs/pruebas.md)
+- [Plan de Trabajo y Estado (plan-trabajo.md)](docs/plan-trabajo.md)
+- **Swagger / OpenAPI interactivo:** disponible en `http://localhost:5000/swagger` cuando la API está corriendo.

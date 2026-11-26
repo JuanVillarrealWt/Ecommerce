@@ -16,6 +16,7 @@ import '../domain/category.dart';
 import '../domain/product.dart';
 import 'product_detail_page.dart';
 import 'product_image.dart';
+import 'address_form_page.dart';
 import '../infrastructure/stripe_checkout_platform.dart' as stripe_checkout;
 
 class CatalogPage extends StatefulWidget {
@@ -65,6 +66,7 @@ class _CatalogPageState extends State<CatalogPage> {
   late Future<List<Category>> _categoriesFuture;
   int? _selectedCategoryId;
   int _cartCount = 0;
+  final Map<int, int> _cartQuantities = {};
   bool _isGridView = true;
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
@@ -275,8 +277,19 @@ class _CatalogPageState extends State<CatalogPage> {
   Future<void> _refreshCartCount() async {
     final cart = await widget.getCart();
     if (mounted) {
+      final quantities = <int, int>{};
+      for (final item in cart.items) {
+        quantities.update(
+          item.product.id,
+          (quantity) => quantity + item.quantity,
+          ifAbsent: () => item.quantity,
+        );
+      }
       setState(() {
         _cartCount = cart.items.fold(0, (sum, item) => sum + item.quantity);
+        _cartQuantities
+          ..clear()
+          ..addAll(quantities);
       });
     }
   }
@@ -337,6 +350,7 @@ class _CatalogPageState extends State<CatalogPage> {
       context: context,
       builder: (sheetContext) {
         var isSubmitting = false;
+        var addingAddress = false;
         var couponCode = '';
         String? couponError;
         final defaultAddressIndex = savedAddresses.indexWhere(
@@ -759,14 +773,63 @@ class _CatalogPageState extends State<CatalogPage> {
                                 setSheetState(() => selectedAddressId = value),
                           ),
                         ] else if (customer != null) ...[
-                          Text(
-                            'No tienes direcciones guardadas. Se usará la dirección registrada en tu perfil de Odoo.',
-                            style: TextStyle(
-                              color: Theme.of(
-                                sheetContext,
-                              ).colorScheme.onSurfaceVariant,
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: addingAddress,
+                            title: const Text(
+                              'Registrar una dirección de entrega',
+                            ),
+                            subtitle: const Text(
+                              'Necesitas una dirección guardada para pagar.',
+                            ),
+                            onChanged: (value) => setSheetState(
+                              () => addingAddress = value ?? false,
                             ),
                           ),
+                          if (addingAddress)
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    widget.customerFeaturesRepository == null
+                                    ? null
+                                    : () async {
+                                        final address =
+                                            await Navigator.of(
+                                              sheetContext,
+                                            ).push<Map<String, dynamic>>(
+                                              MaterialPageRoute(
+                                                builder: (_) => AddressFormPage(
+                                                  repository: widget
+                                                      .customerFeaturesRepository!,
+                                                  initialProvince:
+                                                      customer.province,
+                                                  initialPhone: customer.phone,
+                                                  isPrimary: true,
+                                                ),
+                                              ),
+                                            );
+                                        if (address == null ||
+                                            !sheetContext.mounted) {
+                                          return;
+                                        }
+                                        setSheetState(() {
+                                          savedAddresses.add(address);
+                                          selectedAddressId = address['id']
+                                              ?.toString();
+                                          addingAddress = false;
+                                        });
+                                      },
+                                icon: const Icon(
+                                  Icons.add_location_alt_outlined,
+                                ),
+                                label: const Text('Agregar dirección'),
+                              ),
+                            ),
+                          if (widget.customerFeaturesRepository == null)
+                            const Text(
+                              'No se pudo abrir el registro de direcciones. Intenta de nuevo.',
+                            ),
                         ],
                         const SizedBox(height: 16),
                         SizedBox(
@@ -778,7 +841,11 @@ class _CatalogPageState extends State<CatalogPage> {
                                 sheetContext,
                               ).colorScheme.primary,
                             ),
-                            onPressed: isSubmitting
+                            onPressed:
+                                isSubmitting ||
+                                    (widget.getCurrentCustomer() != null &&
+                                        (savedAddresses.isEmpty ||
+                                            selectedAddressId == null))
                                 ? null
                                 : () async {
                                     final customer = widget
@@ -797,6 +864,20 @@ class _CatalogPageState extends State<CatalogPage> {
                                         ),
                                       );
                                       widget.onNavigateToAuth();
+                                      return;
+                                    }
+
+                                    if (savedAddresses.isEmpty ||
+                                        selectedAddressId == null) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Registra y selecciona una dirección antes de pagar.',
+                                          ),
+                                        ),
+                                      );
                                       return;
                                     }
 
@@ -1305,25 +1386,14 @@ class _CatalogPageState extends State<CatalogPage> {
     Product product, {
     bool isGrid = false,
   }) => _ProductCard(
+    key: ValueKey(product.id),
     product: product,
     isGrid: isGrid,
     isPurchased: _purchasedProductIds.contains(product.id),
+    cartQuantity: _cartQuantities[product.id] ?? 0,
     onAddToCart: () async {
-      try {
-        await widget.addProductToCart(product, quantity: 1);
-        await _refreshCartCount();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${product.name} se agregó al carrito.')),
-          );
-        }
-      } catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('$error')));
-        }
-      }
+      await widget.addProductToCart(product, quantity: 1);
+      await _refreshCartCount();
     },
     onTap: () async {
       final cart = await widget.getCart();
@@ -1391,37 +1461,82 @@ Widget _cartProductThumbnail(Product product, {required double size}) {
   );
 }
 
-class _ProductCard extends StatelessWidget {
+class _ProductCard extends StatefulWidget {
   const _ProductCard({
     required this.product,
     required this.onTap,
     required this.onAddToCart,
+    this.cartQuantity = 0,
     this.isGrid = false,
     this.isPurchased = false,
+    super.key,
   });
 
   final Product product;
   final VoidCallback onTap;
   final Future<void> Function() onAddToCart;
+  final int cartQuantity;
   final bool isGrid;
   final bool isPurchased;
 
   @override
+  State<_ProductCard> createState() => _ProductCardState();
+}
+
+class _ProductCardState extends State<_ProductCard> {
+  bool _isAdding = false;
+  bool _justAdded = false;
+
+  Future<void> _addToCart() async {
+    if (_isAdding || _justAdded) return;
+    setState(() => _isAdding = true);
+    try {
+      await widget.onAddToCart();
+      if (!mounted) return;
+      setState(() {
+        _isAdding = false;
+        _justAdded = true;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      if (mounted) setState(() => _justAdded = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isAdding = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final product = widget.product;
+    final isGrid = widget.isGrid;
+    final isPurchased = widget.isPurchased;
+    final cartIcon = _isAdding
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Icon(
+            _justAdded ? Icons.check : Icons.add_shopping_cart,
+            size: isGrid ? 19 : 24,
+          );
     final colors = Theme.of(context).colorScheme;
     final hasStock = product.stockTracked && product.stock > 0;
     final stockLabel = !product.stockTracked
-        ? 'Inventario sin configurar'
+        ? 'Stock sin configurar (${widget.cartQuantity})'
         : hasStock
-        ? 'Stock ${product.stock}'
-        : 'Agotado';
+        ? 'Stock ${product.stock} (${widget.cartQuantity})'
+        : 'Agotado (${widget.cartQuantity})';
     final image = product.imageUrl;
 
     return Card(
       elevation: 2,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         child: isGrid
             ? Padding(
                 padding: const EdgeInsets.all(10),
@@ -1509,8 +1624,11 @@ class _ProductCard extends StatelessWidget {
                               ),
                               Text(
                                 stockLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 9,
                                   fontWeight: FontWeight.bold,
                                   color: hasStock
                                       ? colors.onTertiaryContainer
@@ -1523,8 +1641,10 @@ class _ProductCard extends StatelessWidget {
                         IconButton.filledTonal(
                           tooltip: 'Agregar al carrito',
                           visualDensity: VisualDensity.compact,
-                          onPressed: hasStock ? onAddToCart : null,
-                          icon: const Icon(Icons.add_shopping_cart, size: 19),
+                          onPressed: hasStock && !_isAdding && !_justAdded
+                              ? _addToCart
+                              : null,
+                          icon: cartIcon,
                         ),
                       ],
                     ),
@@ -1635,6 +1755,9 @@ class _ProductCard extends StatelessWidget {
                                 ),
                                 child: Text(
                                   stockLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
@@ -1652,8 +1775,10 @@ class _ProductCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     IconButton.filledTonal(
                       tooltip: 'Agregar al carrito',
-                      onPressed: hasStock ? onAddToCart : null,
-                      icon: const Icon(Icons.add_shopping_cart),
+                      onPressed: hasStock && !_isAdding && !_justAdded
+                          ? _addToCart
+                          : null,
+                      icon: cartIcon,
                     ),
                   ],
                 ),

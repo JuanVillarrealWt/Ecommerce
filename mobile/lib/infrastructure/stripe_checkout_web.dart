@@ -34,6 +34,31 @@ class _WebCheckoutPageState extends State<_WebCheckoutPage> {
   String? _error;
 
   Future<void> _pay() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Confirmar pago'),
+          content: Text(
+            'Vas a confirmar el pago de ${widget.checkout.currency.toUpperCase()} ${widget.checkout.amountTotal.toStringAsFixed(2)} para el pedido ${widget.checkout.orderName}. ¿Continuar?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Confirmar pago'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
     setState(() {
       _submitting = true;
       _error = null;

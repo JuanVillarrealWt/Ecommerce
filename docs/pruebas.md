@@ -1,80 +1,63 @@
-# Guía de pruebas y criterios de aceptación
+# Guía de Pruebas y Criterios de Aceptación
 
-Esta guía relaciona las funciones disponibles con verificaciones manuales y automatizadas. No se atribuyen resultados de ejecución: registra aquí la fecha, entorno y salida real de cada corrida.
+Esta guía relaciona todas las funciones de la plataforma móvil y el backend con criterios de aceptación concretos y verificaciones manuales y automatizadas.
 
-## Matriz funcional
+---
 
-| Área | Criterio de aceptación | Verificación sugerida |
+## Matriz Funcional de Pruebas
+
+| Módulo | Criterio de Aceptación | Verificación Sugerida |
 | --- | --- | --- |
-| Catálogo y categorías | Productos, detalle, imágenes y filtro por categoría reflejan datos de Odoo. | Consultar `GET /api/products`, `/api/products/{id}`, `/api/products/{id}/image` y `/api/categories`; validar en Flutter. |
-| Cuenta | Registro sincroniza el contacto; login entrega sesión; perfil solo modifica al cliente autenticado. | Probar datos válidos/inválidos y revisar asociación en Odoo. |
-| Carrito | El carrito se mantiene asociado a la cuenta al volver a iniciar sesión. | Añadir, cambiar cantidad, quitar; consultar `GET/PUT /api/cart` y reiniciar API. |
-| Checkout | Backend valida catálogo, cantidades, precio y cupón antes del pago. | Crear pago con carrito válido y probar cantidad/producto/cupón inválido. |
-| Stripe | Éxito confirma la orden; fallo/cancelación no la marcan pagada; webhook verifica firma. | Usar Stripe CLI con los tres eventos configurados y revisar estados/historial. |
-| Pedidos | Historial y detalle contienen solo pedidos propios confirmados. | Consultar `/api/orders` y `/api/orders/{id}` con dos cuentas; probar PDF y recepción. |
-| Funciones de cliente | Favoritos, direcciones, notificaciones y reseñas persisten y se aíslan por cuenta. | Probar endpoints `/api/customer/features`; reseñar solo producto comprado en pedido confirmado. |
+| **Catálogo y Categorías** | Productos, descripciones, stock e imágenes reflejan Odoo en tiempo real. Filtro por categoría y búsqueda funcionan. | Consultar `GET /api/products`, `GET /api/products?categoryId=...` y `GET /api/categories`. Probar búsqueda en la app móvil. |
+| **Inventario y Existencias** | Si el stock es 0, el botón de compra se deshabilita. No se puede pedir más del stock existente. | Intentar ingresar una cantidad superior al stock en `ProductDetailPage`. Verificar mensajes de advertencia. |
+| **Cuenta y Perfil** | Registro valida provincia de Ecuador y celular `09...`. Sincroniza contacto con Odoo. Login devuelve JWT. | Probar registro con datos válidos e inválidos. Validar creación del `res.partner` en Odoo. Actualizar perfil en `PUT /api/auth/profile`. |
+| **Carrito Persistente** | El carrito se conserva al cerrar y volver a abrir sesión, o entre dispositivos distintos. | Agregar productos, reiniciar app, cerrar e iniciar sesión con la misma cuenta. Verificar `GET /api/cart`. |
+| **Checkout y Cupones** | El backend valida precios de Odoo, stock y aplica cupón solo si coincide con los productos válidos. | Enviar solicitud con cupón `CUMBRES10`. Comprobar cálculo del total y creación del intento en Stripe. |
+| **Stripe y Webhook** | El pago exitoso confirma la orden en Odoo. El fallo o cancelación la deja pendiente o cancelada. Firma HMAC verificada. | Usar tarjetas de prueba de Stripe con Stripe CLI activo. Comprobar recepción en `/api/checkout/webhook` y estado final en Odoo (`sale`). |
+| **Historial y Comprobante PDF** | Pedidos confirmados aparecen en la lista. Se genera comprobante PDF sin errores en el dispositivo. | Abrir `OrdersPage`, seleccionar pedido, verificar detalle y presionar botón de descargar/ver comprobante PDF. |
+| **Confirmación de Entrega** | El usuario puede marcar su pedido como recibido. El estado se refleja en la app. | Pulsar botón "Marcar como recibido" en `OrderDetailPage`. Verificar cambio de icono y persistencia. |
+| **Direcciones de Envío** | Múltiples direcciones guardadas. La predeterminada sincroniza con Odoo. No se puede borrar la predeterminada. | Crear, editar y borrar direcciones. Validar que la ventana de confirmación no se cierre al tocar afuera (`barrierDismissible: false`). |
+| **Favoritos** | Agregar o quitar favorito actualiza inmediatamente la UI sin recargar manualmente. | Presionar corazón en catálogo o detalle. Comprobar que en "Mis preferencias" se actualiza al instante. |
+| **Reseñas Verificadas** | Solo se puede calificar productos comprados en pedidos confirmados (`sale`/`done`). | Intentar calificar un producto no comprado (debe bloquearse). Calificar uno comprado, editar y borrar reseña. Verificar actualización inmediata. |
 
-## Comandos de pruebas automatizadas
+---
 
+## Comandos de Pruebas Automatizadas
+
+### Backend (.NET 10)
 Desde la raíz del repositorio:
-
 ```powershell
 dotnet test backend/ECommerce.Tests
 ```
 
-Para Flutter:
-
+### Aplicación Móvil (Flutter)
+Desde la carpeta `mobile`:
 ```powershell
 cd mobile
 flutter test
 ```
 
-Anota el resultado observado; las pruebas pueden variar conforme se actualiza el proyecto. No asumas el resultado de corridas anteriores como evidencia del estado actual.
+---
 
-## Prueba manual de integración
+## Verificación Manual de Integración de Extremo a Extremo
 
-1. Inicia la API, Stripe CLI y Flutter con los pasos del [README](../README.md).
-2. Confirma que catálogo y categorías cargan desde Odoo.
-3. Registra una cuenta, inicia sesión, guarda dirección y agrega productos al carrito.
-4. Completa un pago de prueba y confirma que el webhook actualiza el intento y la orden.
-5. Revisa historial/detalle, PDF, estado de recepción, reseñas, favoritos y notificaciones.
-6. Repite consultas autenticadas con otra cuenta para comprobar que no ve datos ajenos.
-
-## Registro de ejecución
-
-| Fecha | Entorno (Odoo/Android/Flutter/.NET) | Comando o flujo | Resultado observado | Evidencia |
-| --- | --- | --- | --- | --- |
-| Pendiente | Completar | Completar | Completar | Completar |
-
-## Revisión estática de la colección Postman existente
-
-Se contrastaron las solicitudes de `docs/Ecommerce_Postman_Collection.json` con los controladores y contratos actuales. Se corrigieron rutas obsoletas y se añadieron solicitudes para los flujos actuales. El JSON se pudo interpretar como una colección Postman v2.1; esto confirma su estructura, pero no demuestra conectividad con una instancia real.
-
-### Solicitudes que coinciden con rutas actuales
-
-- `GET /api/products`, `GET /api/products?categoryId=...`, `GET /api/products/{id}` y `GET /api/categories` siguen existiendo.
-- `POST /api/auth/register` y `POST /api/auth/login` siguen existiendo.
-- `GET /api/orders` y `GET /api/orders/{id}` siguen existiendo y requieren token.
-
-### Hallazgos corregidos y límites actuales
-
-1. **`GET /api/auth/me` no existe.** Se reemplazó por `GET /api/customer/features` para consultar la cuenta. La API ofrece `PUT /api/auth/profile` para actualizar el perfil.
-2. **`POST /api/orders` está obsoleto.** La colección ahora ofrece `POST /api/checkout/payments`; el endpoint antiguo responde `410 Gone`.
-3. **La colección no confirma pagos.** Iniciar checkout crea una cotización y un PaymentIntent de prueba. Confirmar el pago requiere el SDK Stripe y el webhook firmado; no se simula enviando manualmente un webhook desde Postman.
-4. **Los IDs de ejemplo son fijos.** Categoría `1`, producto `1` y pedido `1` pueden no existir en tu base Odoo o pertenecer a otros datos. Sustitúyelos por IDs reales al ejecutar solicitudes.
-5. **El token se obtiene al iniciar sesión.** Registro devuelve los datos del cliente. La solicitud Login guarda su token como `jwt_token` para las rutas autenticadas.
-6. **Algunas solicitudes escriben datos.** Registro crea un cliente; iniciar checkout crea una cotización y un intento de pago de prueba. `GET /api/customer/features` puede refrescar estados observados de pedidos y generar una notificación si detecta un cambio. Revisa la descripción antes de enviar solicitudes.
-
-La colección contiene solicitudes para catálogo, cuenta, carrito, checkout, pagos, pedidos y lecturas de funciones del cliente. Los IDs iniciales de `productId`, `categoryId` y `orderId` son ejemplos; cámbialos por valores presentes en tu Odoo. La colección no es parte de la compilación ni del arranque de Flutter o backend: el código no la carga como configuración. Un JSON mal formado afectaría su importación en Postman, no la app; enviar solicitudes sí puede crear los datos indicados arriba. El contrato vigente sigue siendo el código del backend y `api.md`.
-
-## Pruebas unitarias y de integración
-
-`dotnet test backend/ECommerce.Tests` y `flutter test` son los comandos indicados para las suites automatizadas. La matriz de arriba describe criterios a verificar, pero el registro permanece pendiente hasta ejecutar los comandos y guardar el resultado. Una prueba unitaria no sustituye las verificaciones externas de Odoo, Stripe CLI, red del dispositivo ni firma del webhook.
-
-Para aislar fallos, registra también:
-
-- Versión de .NET SDK, Flutter, Android y Postman usada en la ejecución.
-- URL base/API usada, sin escribir secretos ni tokens en el registro.
-- Si Odoo/Stripe estaban conectados y qué base/cuenta de prueba se utilizó.
-- Método, ruta, código HTTP observado y resultado funcional, ocultando datos personales.
-- Resultado de Flutter y logs backend relevantes, eliminando tokens, claves y datos sensibles antes de compartirlos.
+1. **Levantar el entorno:**
+   - Iniciar la API con `./scripts/run-api.ps1`.
+   - Iniciar Stripe CLI con:
+     `stripe listen --events "payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled" --forward-to http://100.75.46.80:5000/api/checkout/webhook`
+   - Iniciar Flutter con:
+     `flutter run --dart-define=API_BASE_URL=http://100.75.46.80:5000 --dart-define=STRIPE_PUBLISHABLE_KEY=pk_test_...`
+2. **Crear usuario y dirección:**
+   - Registrar una cuenta nueva (ej. `test@example.com`, provincia `Pichincha`, celular `0991234567`).
+   - Guardar una dirección en "Mis preferencias". Comprobar que no se cierra si se toca fuera del diálogo.
+3. **Flujo de compra:**
+   - Seleccionar un producto con existencias, añadir al carrito e ir a checkout.
+   - Pagar usando una tarjeta de prueba de Stripe (ej. `4242 4242 4242 4242`, fecha futura, CVC cualquier 3 dígitos).
+   - Verificar en la consola de Stripe CLI que el evento `payment_intent.succeeded` fue recibido y respondió `200 OK`.
+4. **Verificación post-compra:**
+   - Comprobar que el pedido aparece en "Mis pedidos" como confirmado (`sale`).
+   - Generar el PDF del comprobante y verificar la orden.
+   - Marcar el pedido como recibido.
+   - Ir a la ficha del producto comprado y verificar que ahora aparece el botón para calificarlo.
+   - Enviar una reseña y verificar que se muestra de inmediato.
+   - Eliminar la reseña y verificar que desaparece de inmediato sin tener que salir y volver a entrar.
